@@ -1,16 +1,16 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { fetchAgents } from '../lib/apiClient';
+import { fetchAgents, Agent } from '../lib/apiClient';
 
 interface AgentListProps {
   search?: string;
 }
 
 export default function AgentList({ search = '' }: AgentListProps) {
-  const { data, error, isLoading, refetch } = useQuery({ queryKey: ['agents'], queryFn: fetchAgents, refetchOnWindowFocus: true, retry: 1 });
+  const { data, error, isLoading, refetch } = useQuery<Agent[]>({ queryKey: ['agents'], queryFn: fetchAgents, refetchOnWindowFocus: true, retry: 1 });
 
-  if (isLoading) return <p className="text-slate-500">Loading agents...</p>;
+  if (isLoading) return <p className="text-slate-500 theme-transition">Loading agents...</p>;
   if (error) {
     const message = (error as any)?.message || 'Unknown error';
     return (
@@ -21,7 +21,8 @@ export default function AgentList({ search = '' }: AgentListProps) {
     );
   }
 
-  const filtered = (data || []).filter((a: any) => {
+  const agentsArray: Agent[] = Array.isArray(data) ? data : [];
+  const filtered = agentsArray.filter((a) => {
     if (!search) return true;
     const q = search.toLowerCase();
     return (
@@ -31,13 +32,13 @@ export default function AgentList({ search = '' }: AgentListProps) {
   });
 
   if (!filtered.length) {
-    return <p className="text-slate-500">No agents match your search.</p>;
+  return <p className="text-slate-500 theme-transition">No agents match your search.</p>;
   }
 
   return (
     <div className="grid grid-cols-1 gap-3 mt-2">
-      {filtered.map((agent: any) => (
-        <div key={agent.id} className="border border-slate-200/80 dark:border-slate-800/80 rounded-lg p-4 bg-white dark:bg-slate-900 hover:shadow-sm hover:border-blue-300/70 dark:hover:border-blue-600/70 transition-colors">
+      {filtered.map((agent) => (
+        <div key={agent.id} className="border border-slate-200/80 dark:border-slate-800/80 rounded-lg p-4 bg-white dark:bg-slate-900 hover:shadow-sm hover:border-blue-300/70 dark:hover:border-blue-600/70 theme-transition">
           <div className="flex items-start justify-between">
             <div>
               <h2 className="text-[15px] font-semibold text-slate-900 dark:text-white leading-6">{agent.name}</h2>

@@ -79,37 +79,53 @@
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  /* Enterprise Dark Mode Color System */
+  /* Primary Backgrounds */
+  --background: #0D1117; /* True dark background */
+  --foreground: #F0F6FC; /* High contrast white text */
+  
+  /* Secondary Backgrounds */
+  --card: #21262D; /* Slightly lighter panels */
+  --card-foreground: #F0F6FC;
+  --popover: #21262D;
+  --popover-foreground: #F0F6FC;
+  
+  /* Interactive Elements */
+  --primary: #1F6FEB; /* Blue accent with proper contrast */
+  --primary-foreground: #F0F6FC;
+  --secondary: #30363D; /* Subtle secondary background */
+  --secondary-foreground: #F0F6FC;
+  
+  /* Text Hierarchy */
+  --muted: #30363D; /* Muted background */
+  --muted-foreground: #8B949E; /* Secondary text color */
+  --accent: #30363D;
+  --accent-foreground: #F0F6FC;
+  
+  /* Status Colors */
+  --destructive: #F85149; /* Error red with proper contrast */
+  
+  /* Borders and Inputs */
+  --border: #30363D; /* Subtle borders */
+  --input: #21262D; /* Input background */
+  --ring: #1F6FEB; /* Focus ring */
+  
+  /* Chart Colors - Enterprise palette */
+  --chart-1: #1F6FEB;
+  --chart-2: #3FB950;
+  --chart-3: #D29922;
+  --chart-4: #F85149;
+  --chart-5: #A5A5A5;
+  
+  /* Sidebar Colors */
+  --sidebar: #161B22; /* Sidebar dark background */
+  --sidebar-foreground: #F0F6FC;
+  --sidebar-primary: #1F6FEB;
+  --sidebar-primary-foreground: #F0F6FC;
+  --sidebar-accent: #21262D;
+  --sidebar-accent-foreground: #F0F6FC;
+  --sidebar-border: #30363D;
+  --sidebar-ring: #1F6FEB;
 }
 
 @layer base {
@@ -118,5 +134,130 @@
   }
   body {
     @apply bg-background text-foreground;
+    position: relative;
+    min-height: 100vh;
+  }
+  
+  /* Theme transition variables */
+  :root {
+    --theme-transition-duration: 150ms;
+    --theme-transition-timing: cubic-bezier(0.2, 0, 0.2, 1);
+    --bg-texture-opacity: 0;
+  }
+
+  /* Global theme-aware transitions - this is the key fix */
+  * {
+    transition-duration: var(--theme-transition-duration);
+    transition-timing-function: var(--theme-transition-timing);
+  }
+
+  /* For elements that don't have transitions, add theme-sensitive properties */
+  *:not([class*="duration-"]):not([style*="transition"]) {
+    transition-property: background-color, color, border-color, fill, stroke, opacity, box-shadow;
+  }
+
+  /* Texture pseudo-element */
+  body::before {
+    content: '';
+    pointer-events: none;
+    position: fixed;
+    inset: 0;
+    background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,0.02) 1px, transparent 0);
+    background-size: 20px 20px;
+    opacity: var(--bg-texture-opacity);
+    transition: opacity var(--theme-transition-duration) var(--theme-transition-timing);
+    z-index: -1;
+  }
+
+  /* Respect user motion preferences */
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      transition-duration: 0ms;
+      animation-duration: 0ms;
+    }
+  }
+
+  .dark {
+    --bg-texture-opacity: 0.04;
+  }
+
+  /* Focus and hover states */
+  .focus-ring {
+    box-shadow: 
+      0 0 0 2px var(--ring),
+      0 0 0 4px rgba(31, 111, 235, 0.12);
+  }
+
+  .hover-lift:hover {
+    transform: translateY(-1px);
+    box-shadow: 
+      0 6px 12px -6px rgba(0,0,0,0.08),
+      0 2px 4px -2px rgba(0,0,0,0.04);
+  }
+
+  .card-shadow {
+    box-shadow: 
+      0 1px 3px 0 rgba(0, 0, 0, 0.06),
+      0 1px 2px -1px rgba(0, 0, 0, 0.04);
+  }
+  
+  .card-shadow-lg {
+    box-shadow: 
+      0 10px 15px -3px rgba(0,0,0,0.08),
+      0 4px 6px -4px rgba(0,0,0,0.06);
+  }
+}
+
+/* Override specific transition utilities that might have different durations */
+@layer utilities {
+  /* Temporarily applied to <html> to force instant theme swap without perceptible cascading lag */
+  .disable-theme-transitions *,
+  .disable-theme-transitions *::before,
+  .disable-theme-transitions *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+  .transition-colors {
+    transition-property: color, background-color, border-color, text-decoration-color, fill, stroke;
+    transition-duration: var(--theme-transition-duration);
+    transition-timing-function: var(--theme-transition-timing);
+  }
+
+  .transition-all {
+    transition-property: all;
+    transition-duration: var(--theme-transition-duration);
+    transition-timing-function: var(--theme-transition-timing);
+  }
+
+  .transition {
+    transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter;
+    transition-duration: var(--theme-transition-duration);
+    transition-timing-function: var(--theme-transition-timing);
+  }
+
+  /* Override all Tailwind duration classes */
+  [class*="duration-"] {
+    transition-duration: var(--theme-transition-duration);
+  }
+
+  /* Catch any remaining transition declarations */
+  [class*="transition-all"],
+  [class*="transition-colors"],
+  [style*="transition"] {
+    transition-duration: var(--theme-transition-duration);
+    transition-timing-function: var(--theme-transition-timing);
+  }
+
+  /* Theme-aware utilities for explicit use */
+  .theme-transition {
+    transition-property: background-color, color, border-color, fill, stroke, opacity, box-shadow;
+    transition-duration: var(--theme-transition-duration);
+    transition-timing-function: var(--theme-transition-timing);
+  }
+
+  .theme-transition-transform {
+    transition-property: background-color, color, border-color, fill, stroke, opacity, box-shadow, transform;
+    transition-duration: var(--theme-transition-duration);
+    transition-timing-function: var(--theme-transition-timing);
   }
 }

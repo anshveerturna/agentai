@@ -5,6 +5,7 @@ import { DashboardLayout } from '../../components/layout/DashboardLayout';
 import AgentList from '../../components/AgentList';
 import AgentTable from '../../components/AgentTable';
 import ExploreAgents from '../../components/ExploreAgents';
+import CreateAgentModal from '../../components/CreateAgentModal';
 import LearningResources from '../../components/LearningResources';
 import { CreateAgentDialog } from '../../components/CreateAgentDialog';
 import { Input } from '../../components/ui/input';
@@ -15,6 +16,8 @@ export default function AgentsPage() {
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'all' | 'templates' | 'mine'>('all');
   const [view, setView] = useState<'grid' | 'table'>('table');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [prefillTemplate, setPrefillTemplate] = useState<any | null>(null);
 
   return (
     <DashboardLayout>
@@ -133,13 +136,14 @@ export default function AgentsPage() {
 
           {/* Agent Template (landscape) */}
           <ExploreAgents
-            onSelectTemplate={() => { /* seed create dialog in future */ }}
+            onSelectTemplate={(t) => { setPrefillTemplate(t); setCreateOpen(true); }}
             title="Agent Template"
             variant="landscape"
           />
 
           {/* Learning resources (landscape) */}
           <LearningResources variant="landscape" />
+          <CreateAgentModal open={createOpen} onOpenChange={(v) => { setCreateOpen(v); if (!v) setPrefillTemplate(null); }} prefillTemplate={prefillTemplate} />
         </div>
       </div>
     </DashboardLayout>

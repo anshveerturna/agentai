@@ -1,6 +1,6 @@
 'use client';
 
-import { Home, Plus, Users, Share2, Settings, Shield, Wrench, Grid } from 'lucide-react';
+import { Home, Plus, Users, Share2, Settings, Shield, Wrench } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -18,30 +18,37 @@ export function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="h-screen w-20 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col items-center py-6 shadow-lg">
+  <aside className="h-screen w-20 bg-sidebar border-r border-sidebar-border flex flex-col items-center py-6 shadow-lg theme-transition">
       <div className="-mt-5 mb-2 flex items-center justify-center w-full h-16">
-        <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <rect x="6" y="28" width="12" height="12" rx="3" fill="#2563eb" />
-          <rect x="6" y="8" width="12" height="12" rx="3" fill="#2563eb" />
-          <rect x="26" y="28" width="12" height="12" rx="3" fill="#2563eb" />
-          <rect x="26" y="8" width="12" height="12" rx="3" fill="#2563eb" />
-          <rect x="20" y="16" width="3" height="16" rx="1.5" fill="#2563eb" />
-          <rect x="15" y="21" width="16" height="3" rx="1.5" fill="#2563eb" />
-        </svg>
+  <div className="w-12 h-12 bg-gradient-to-br from-[#1F6FEB] to-[#0969DA] rounded-lg p-1 hover-lift theme-transition-transform">
+          <div className="w-full h-full bg-sidebar rounded-md flex items-center justify-center">
+            <svg width="32" height="32" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="6" y="28" width="12" height="12" rx="3" fill="#1F6FEB" />
+              <rect x="6" y="8" width="12" height="12" rx="3" fill="#1F6FEB" />
+              <rect x="26" y="28" width="12" height="12" rx="3" fill="#1F6FEB" />
+              <rect x="26" y="8" width="12" height="12" rx="3" fill="#1F6FEB" />
+              <rect x="20" y="16" width="3" height="16" rx="1.5" fill="#1F6FEB" />
+              <rect x="15" y="21" width="16" height="3" rx="1.5" fill="#1F6FEB" />
+            </svg>
+          </div>
+        </div>
       </div>
-      <nav className="flex flex-col gap-6 flex-1">
+  <nav className="flex flex-col gap-4 flex-1">
         {navItems.map(({ name, icon: Icon, href }) => {
           const isActive = pathname === href;
           return (
             <Link key={name} href={href}>
               <div
-                className={`group flex flex-col items-center gap-1 px-2 py-1 rounded-lg transition-all duration-200
-                  ${isActive ? 'bg-blue-50 text-blue-600 font-bold shadow-md scale-105' : 'text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:scale-105 hover:bg-slate-100 dark:hover:bg-slate-800'}
-                  active:scale-95 active:shadow-sm cursor-pointer`}
-                style={{ outline: isActive ? '2px solid #2563eb' : 'none', outlineOffset: isActive ? '2px' : '0' }}
+                className={`group flex flex-col items-center gap-1 px-2 py-2 rounded-lg hover-lift theme-transition-transform
+                  ${isActive 
+                    ? 'bg-sidebar-accent text-sidebar-primary shadow-md scale-105 border border-sidebar-border' 
+                    : 'text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50'
+                  }`}
               >
-                <Icon className={`w-6 h-6 ${isActive ? 'text-blue-600' : ''}`} />
-                <span className={`text-xs font-medium ${isActive ? 'font-bold' : ''}`}>{name}</span>
+                <Icon className={`w-5 h-5 theme-transition ${isActive ? 'text-sidebar-primary' : ''}`} />
+                <span className={`text-xs font-medium theme-transition ${isActive ? 'font-semibold' : ''}`}>
+                  {name}
+                </span>
               </div>
             </Link>
           );

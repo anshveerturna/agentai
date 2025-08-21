@@ -1,26 +1,14 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { fetchAgents } from '../lib/apiClient';
+import { fetchAgents, Agent } from '../lib/apiClient';
 import { ChevronDown } from 'lucide-react';
 
 interface AgentTableProps {
   search?: string;
 }
 
-type Agent = {
-  id: string;
-  name: string;
-  description?: string;
-  type?: string;
-  owner?: string;
-  ownerName?: string;
-  updatedAt?: string;
-  updated_at?: string;
-  lastPublishedAt?: string;
-  protectionStatus?: string;
-  engagedSessions?: number;
-};
+// Agent type imported from apiClient
 
 function timeAgo(value?: string) {
   if (!value) return '—';
@@ -41,7 +29,7 @@ function timeAgo(value?: string) {
 }
 
 export default function AgentTable({ search = '' }: AgentTableProps) {
-  const { data, error, isLoading, refetch } = useQuery({ queryKey: ['agents'], queryFn: fetchAgents, refetchOnWindowFocus: true, retry: 1 });
+  const { data, error, isLoading, refetch } = useQuery<Agent[]>({ queryKey: ['agents'], queryFn: fetchAgents, refetchOnWindowFocus: true, retry: 1 });
 
   if (isLoading) return <p className="text-slate-500">Loading agents...</p>;
   if (error) {
@@ -54,15 +42,15 @@ export default function AgentTable({ search = '' }: AgentTableProps) {
     );
   }
 
-  const items: Agent[] = (data || []) as Agent[];
+  const items: Agent[] = Array.isArray(data) ? data : [];
   const filtered = items.filter((a) => {
     if (!search) return true;
     const q = search.toLowerCase();
     return (
-      (a.name || '').toLowerCase().includes(q) ||
-      (a.description || '').toLowerCase().includes(q) ||
-      (a.type || '').toLowerCase().includes(q) ||
-      (a.owner || a.ownerName || '').toLowerCase().includes(q)
+      (typeof a.name === 'string' && a.name.toLowerCase().includes(q)) ||
+      (typeof a.description === 'string' && a.description.toLowerCase().includes(q)) ||
+      (typeof a.type === 'string' && a.type.toLowerCase().includes(q)) ||
+  (typeof (a.owner || a.ownerName) === 'string' && String(a.owner || a.ownerName).toLowerCase().includes(q))
     );
   });
 
@@ -99,11 +87,11 @@ export default function AgentTable({ search = '' }: AgentTableProps) {
                   </div>
                 </div>
               </td>
-              <td className="py-4 pr-4 text-slate-700 dark:text-slate-300">{a.type || '—'}</td>
-              <td className="py-4 pr-4 text-slate-700 dark:text-slate-300">{timeAgo(a.updatedAt || a.updated_at)}</td>
-              <td className="py-4 pr-4 text-slate-700 dark:text-slate-300">{a.lastPublishedAt ? timeAgo(a.lastPublishedAt) : 'Never'}</td>
-              <td className="py-4 pr-4 text-slate-700 dark:text-slate-300">{a.owner || a.ownerName || '—'}</td>
-              <td className="py-4 pr-4 text-slate-500">{a.protectionStatus || '—'}</td>
+              <td className="py-4 pr-4 text-slate-700 dark:text-slate-300">{typeof a.type === 'string' ? a.type : '—'}</td>
+              <td className="py-4 pr-4 text-slate-700 dark:text-slate-300">{timeAgo((a.updatedAt || a.updated_at) as string | undefined)}</td>
+              <td className="py-4 pr-4 text-slate-700 dark:text-slate-300">{a.lastPublishedAt ? timeAgo(a.lastPublishedAt as string) : 'Never'}</td>
+              <td className="py-4 pr-4 text-slate-700 dark:text-slate-300">{typeof (a.owner || a.ownerName) === 'string' ? String(a.owner || a.ownerName) : '—'}</td>
+              <td className="py-4 pr-4 text-slate-500">{typeof a.protectionStatus === 'string' ? a.protectionStatus : '—'}</td>
               <td className="py-4 text-slate-500">{typeof a.engagedSessions === 'number' ? a.engagedSessions : '—'}</td>
             </tr>
           ))}
