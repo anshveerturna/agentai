@@ -12,7 +12,7 @@ export default function AgentList({ search = '' }: AgentListProps) {
 
   if (isLoading) return <p className="text-slate-500 theme-transition">Loading agents...</p>;
   if (error) {
-    const message = (error as any)?.message || 'Unknown error';
+    const message = (error && typeof error === 'object' && 'message' in error ? (error as { message?: string }).message : undefined) || 'Unknown error';
     return (
       <div className="rounded-md border border-red-200 bg-red-50 text-red-700 p-4 flex items-center justify-between">
         <span>Error loading agents: {message}</span>
@@ -38,10 +38,10 @@ export default function AgentList({ search = '' }: AgentListProps) {
   return (
     <div className="grid grid-cols-1 gap-3 mt-2">
       {filtered.map((agent) => (
-        <div key={agent.id} className="border border-slate-200/80 dark:border-slate-800/80 rounded-lg p-4 bg-white dark:bg-slate-900 hover:shadow-sm hover:border-blue-300/70 dark:hover:border-blue-600/70 theme-transition">
+  <div key={agent.id} className="border border-border rounded-lg p-4 bg-card hover:shadow-sm hover:border-ring/60 theme-transition">
           <div className="flex items-start justify-between">
             <div>
-              <h2 className="text-[15px] font-semibold text-slate-900 dark:text-white leading-6">{agent.name}</h2>
+              <h2 className="text-[15px] font-semibold text-card-foreground leading-6">{agent.name}</h2>
               <p className="text-sm text-slate-600 dark:text-slate-400 mt-0.5">{agent.description || 'No description'}</p>
             </div>
             <span className="text-xs text-slate-500 dark:text-slate-400">Updated just now</span>

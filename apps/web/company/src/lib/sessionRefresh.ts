@@ -6,7 +6,7 @@ import { getSupabaseClient } from './supabase.client'
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000 // 5 minutes
 const EXPIRY_THRESHOLD_SECONDS = 60 // Refresh if exp < now + 60s
 let started = false
-let timer: any
+let timer: number | undefined
 
 async function refreshIfExpiring() {
   try {
@@ -20,14 +20,16 @@ async function refreshIfExpiring() {
       // Perform a token refresh; supabase-js handles using refresh token
       await client.auth.refreshSession()
     }
-  } catch (e) {
+  } catch {
     // Silently ignore; optional: add logging
   }
 }
 
 function schedule() {
-  clearInterval(timer)
-  timer = setInterval(refreshIfExpiring, REFRESH_INTERVAL_MS)
+  if (typeof timer === 'number') {
+    clearInterval(timer)
+  }
+  timer = window.setInterval(refreshIfExpiring, REFRESH_INTERVAL_MS)
 }
 
 export function initSessionRefresh() {

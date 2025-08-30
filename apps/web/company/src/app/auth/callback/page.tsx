@@ -21,6 +21,21 @@ export default function AuthCallback() {
         }
 
         if (data?.session) {
+          // Copy tokens to HttpOnly cookies for middleware
+          try {
+            await fetch('/api/auth/session', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                access_token: data.session.access_token,
+                refresh_token: data.session.refresh_token,
+                expires_in: data.session.expires_in,
+              }),
+              credentials: 'include',
+            })
+          } catch {
+            // Non-fatal
+          }
           // Success - redirect to dashboard
           router.push('/agents')
         } else {

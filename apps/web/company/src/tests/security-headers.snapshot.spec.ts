@@ -1,4 +1,4 @@
-import { createServer } from 'http'
+import { createServer, type Server } from 'http'
 import next from 'next'
 import fetch from 'node-fetch'
 
@@ -6,7 +6,7 @@ import fetch from 'node-fetch'
 // Run in CI; update snapshot intentionally when policy changes.
 
 describe('Security Headers Snapshot', () => {
-  let server: any
+  let server: Server
   let address: string
 
   beforeAll(async () => {
@@ -15,7 +15,8 @@ describe('Security Headers Snapshot', () => {
     const handle = app.getRequestHandler()
     server = createServer((req, res) => handle(req, res))
     await new Promise<void>(resolve => server.listen(0, resolve))
-    const port = (server.address() as any).port
+  const addr = server.address()
+  const port = typeof addr === 'object' && addr ? addr.port : 0
     address = `http://127.0.0.1:${port}`
   }, 30000)
 

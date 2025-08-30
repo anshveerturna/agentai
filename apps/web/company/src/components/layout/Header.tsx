@@ -6,24 +6,21 @@ import { useCallback, useState, useRef, useEffect } from 'react'
 
 export function Header() {
   const router = useRouter()
-  const handleLogout = useCallback(async () => {
+  const handleLogoutAllDevices = useCallback(async () => {
     try {
       const supabase = getSupabaseClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      // Call global logout endpoint with access token if available
+      await fetch('/api/auth/logout-all', {
+        method: 'POST',
+        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : undefined,
+        credentials: 'include',
+      })
+      // Always clear local session
       await supabase.auth.signOut()
       router.replace('/login')
     } catch (e) {
-      // Optionally add toast
-      console.error('Logout failed', e)
-    }
-  }, [router])
-  const handleLogoutAll = useCallback(async () => {
-    try {
-      await fetch('/api/auth/logout-all', { method: 'POST' })
-      const supabase = getSupabaseClient()
-      await supabase.auth.signOut()
-      router.replace('/login')
-    } catch (e) {
-      console.error('Logout all failed', e)
+      console.error('Global logout failed', e)
     }
   }, [router])
 
@@ -51,7 +48,7 @@ export function Header() {
   }, [open])
 
   return (
-  <header className="flex items-center justify-between h-16 px-8 bg-card border-b border-border shadow-sm backdrop-blur-sm theme-transition">
+  <header className="sticky top-0 z-40 flex items-center justify-between h-16 px-8 bg-sidebar supports-[backdrop-filter]:bg-sidebar/95 border-b border-sidebar-border shadow-lg backdrop-blur-sm theme-transition">
       <div className="flex items-center gap-4">
   <span className="text-2xl font-extrabold tracking-tight bg-gradient-to-br from-[#1F6FEB] to-[#0969DA] bg-clip-text text-transparent theme-transition">Jinni</span>
         <span className="px-3 py-1 rounded-md bg-muted text-xs font-medium text-muted-foreground border border-border">
@@ -84,18 +81,11 @@ export function Header() {
             >
               <div className="px-3 py-2 border-b border-border text-xs uppercase tracking-wide text-muted-foreground">Account</div>
               <button
-                onClick={() => { close(); handleLogout() }}
+                onClick={() => { close(); handleLogoutAllDevices() }}
                 role="menuitem"
                 className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-accent hover:text-foreground theme-transition"
               >
-                <span className="inline-block w-2 h-2 rounded-full bg-destructive/70" /> Logout
-              </button>
-              <button
-                onClick={() => { close(); handleLogoutAll() }}
-                role="menuitem"
-                className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-accent hover:text-foreground theme-transition"
-              >
-                <span className="inline-block w-2 h-2 rounded-full bg-orange-500/70" /> Logout All
+                <span className="inline-block w-2 h-2 rounded-full bg-destructive/70" /> Log out
               </button>
             </div>
           )}

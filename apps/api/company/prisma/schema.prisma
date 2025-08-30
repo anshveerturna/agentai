@@ -9,12 +9,15 @@ datasource db {
 
 model Agent {
   id          String   @id @default(uuid())
-  companyId   String
+  companyId   String?
   userId      String   @db.Uuid
   name        String
   description String?
+  isTemplate  Boolean  @default(false)
+  isPublished Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  @@index([companyId])
   @@index([userId])
 }

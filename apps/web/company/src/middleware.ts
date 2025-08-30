@@ -22,15 +22,24 @@ export function getSupabase(): SupabaseClient {
 //   // ... your auth / session logic
 // }
 
-const PROTECTED_PREFIXES = ['/agents']
+// Public routes that should bypass auth checks
+const PUBLIC_PREFIXES = ['/login', '/signup', '/auth/callback', '/_next', '/public', '/favicon.ico']
+const PROTECTED_PREFIXES = ['/']
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
+  // Bypass for public paths
+  if (PUBLIC_PREFIXES.some(p => pathname === p || pathname.startsWith(p + '/'))) {
+    return NextResponse.next()
+  }
+  // Never guard API routes
+  if (pathname.startsWith('/api/')) {
+    return NextResponse.next()
+  }
   const needsAuth = PROTECTED_PREFIXES.some(p => pathname === p || pathname.startsWith(p + '/'))
   if (!needsAuth) return NextResponse.next()
 
   try {
-    const supabase = getSupabase()
     const authHeader = req.headers.get('authorization')
     // Use cookie-based session if available; supabase-js on edge currently limited, fallback: rely on client redirect if fails.
     const token = authHeader?.startsWith('Bearer ')
@@ -53,7 +62,7 @@ export async function middleware(req: NextRequest) {
       return redirectToLogin(req)
     }
     return NextResponse.next()
-  } catch (e) {
+  } catch {
     return redirectToLogin(req)
   }
 }
@@ -64,5 +73,10 @@ function redirectToLogin(req: NextRequest) {
   return NextResponse.redirect(loginUrl)
 }
 
-export const config = { matcher: ['/agents/:path*'] }
+// Guard most routes except Next.js internals and API; adjust as needed
+export const config = {
+  matcher: [
+    '/((?!api|_next/static|_next/image|favicon.ico|public/).*)',
+  ],
+}
 

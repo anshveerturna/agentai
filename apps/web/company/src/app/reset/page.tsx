@@ -1,8 +1,16 @@
 "use client"
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 
 export default function ResetPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center p-4 bg-[#0D1117]"><div className="text-[#8B949E]">Loading…</div></div>}>
+      <ResetInner />
+    </Suspense>
+  )
+}
+
+function ResetInner() {
   const router = useRouter()
   const search = useSearchParams()
   const mode = search.get('mode') // null or 'update'
@@ -39,8 +47,8 @@ export default function ResetPage() {
           <h1 className="text-lg font-semibold text-[#F0F6FC]">Set new password</h1>
           {err && <div className="text-sm text-red-400">{err}</div>}
           {msg && <div className="text-sm text-green-400">{msg}</div>}
-          <input placeholder="New password" type="password" value={password} onChange={e=>setPassword(e.target.value)} className="w-full h-10 px-3 rounded-md bg-[#0D1117] border border-[#30363D] text-[#F0F6FC] text-sm" />
-          <input placeholder="Confirm password" type="password" value={confirm} onChange={e=>setConfirm(e.target.value)} className="w-full h-10 px-3 rounded-md bg-[#0D1117] border border-[#30363D] text-[#F0F6FC] text-sm" />
+          <input id="password" placeholder="New password" type="password" value={password} onChange={e=>setPassword(e.target.value)} className="w-full h-10 px-3 rounded-md bg-[#0D1117] border border-[#30363D] text-[#F0F6FC] text-sm" />
+          <input id="confirm" placeholder="Confirm password" type="password" value={confirm} onChange={e=>setConfirm(e.target.value)} className="w-full h-10 px-3 rounded-md bg-[#0D1117] border border-[#30363D] text-[#F0F6FC] text-sm" />
           <button disabled={loading} className="w-full h-10 bg-[#1F6FEB] hover:bg-[#0969DA] text-white rounded-md text-sm font-medium">Update</button>
         </form>
       </div>
@@ -49,11 +57,11 @@ export default function ResetPage() {
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-[#0D1117]">
       <form onSubmit={submitRequest} className="w-full max-w-sm bg-[#21262D] p-6 rounded-lg border border-[#30363D] space-y-4">
-        <h1 className="text-lg font-semibold text-[#F0F6FC]">Reset password</h1>
-        {err && <div className="text-sm text-red-400">{err}</div>}
-        {msg && <div className="text-sm text-green-400">{msg}</div>}
-        <input placeholder="Email" type="email" value={email} onChange={e=>setEmail(e.target.value)} className="w-full h-10 px-3 rounded-md bg-[#0D1117] border border-[#30363D] text-[#F0F6FC] text-sm" />
-        <button disabled={loading} className="w-full h-10 bg-[#1F6FEB] hover:bg-[#0969DA] text-white rounded-md text-sm font-medium">Send link</button>
+  <h1 className="text-lg font-semibold text-[#F0F6FC]">Reset password</h1>
+  {err && <div className="text-sm text-red-400">{err}</div>}
+  {msg && <div className="text-sm text-green-400">{msg}</div>}
+  <input id="email" placeholder="Email" type="email" value={email} onChange={e=>setEmail(e.target.value)} className="w-full h-10 px-3 rounded-md bg-[#0D1117] border border-[#30363D] text-[#F0F6FC] text-sm" />
+  <button disabled={loading} className="w-full h-10 bg-[#1F6FEB] hover:bg-[#0969DA] text-white rounded-md text-sm font-medium">Send reset link</button>
       </form>
     </div>
   )

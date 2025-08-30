@@ -24,10 +24,10 @@ export default function AgentCreation({ onCreateAgent }: AgentCreationProps) {
   };
 
   return (
-    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-8">
+  <div className="bg-card border border-border rounded-lg p-8">
       {/* Title */}
       <div className="text-center mb-8">
-        <h1 className="text-3xl font-semibold text-slate-900 dark:text-white mb-4">
+  <h1 className="text-3xl font-semibold text-foreground mb-4">
           Describe your agent to create it
         </h1>
         
@@ -52,7 +52,7 @@ export default function AgentCreation({ onCreateAgent }: AgentCreationProps) {
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Use everyday words to describe what your agent should do"
-            className="w-full h-24 p-4 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+            className="w-full h-24 p-4 border border-border rounded-lg bg-card text-foreground placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-ring focus:border-ring resize-none"
           />
           <button
             type="submit"
@@ -69,7 +69,7 @@ export default function AgentCreation({ onCreateAgent }: AgentCreationProps) {
       {/* Feature Note */}
       <div className="text-center">
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          Features labeled as 'preview' are subject to supplemental terms. 
+          Features labeled as &apos;preview&apos; are subject to supplemental terms. 
           <button className="text-blue-600 dark:text-blue-400 hover:underline ml-1">See terms</button>
         </p>
       </div>

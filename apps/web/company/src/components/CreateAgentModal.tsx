@@ -10,7 +10,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { X, ChevronRight, Sparkles, Plus } from 'lucide-react';
 import { templates as sharedTemplates, AgentTemplate as SharedAgentTemplate } from '@/data/templates';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002';
+// Use the same-origin proxy so Authorization can be attached from HttpOnly cookies
+const API_PROXY = '/api/company';
 
 export type AgentTemplate = SharedAgentTemplate;
 
@@ -49,7 +50,7 @@ export default function CreateAgentModal({ open, onOpenChange, prefillTemplate }
 
   const mutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`${API_URL}/agents`, {
+      const res = await fetch(`${API_PROXY}/agents`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -59,6 +60,7 @@ export default function CreateAgentModal({ open, onOpenChange, prefillTemplate }
           templateId: selectedTemplate?.id,
           companyId: 'demo-company-123',
         }),
+        credentials: 'include',
       });
       if (!res.ok) throw new Error('Failed to create agent');
       return res.json();

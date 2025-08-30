@@ -1,69 +1,10 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
 import { Moon, Sun } from "lucide-react"
-
-type Theme = 'light' | 'dark'
+import { useTheme } from "@/providers/theme"
 
 export function EnterpriseThemeToggle() {
-  const [theme, setTheme] = useState<Theme>('light')
-  const [mounted, setMounted] = useState(false)
-
-  useEffect(() => {
-    setMounted(true)
-    const stored = localStorage.getItem('theme') as Theme
-    if (stored && ['light', 'dark'].includes(stored)) {
-      setTheme(stored)
-      // Apply immediately to avoid flash
-      if (stored === 'dark') {
-        document.documentElement.classList.add('dark')
-      } else {
-        document.documentElement.classList.remove('dark')
-      }
-    } else {
-      // Default to system preference if no stored theme
-      const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-      setTheme(systemTheme)
-      // Apply immediately to avoid flash
-      if (systemTheme === 'dark') {
-        document.documentElement.classList.add('dark')
-      } else {
-        document.documentElement.classList.remove('dark')
-      }
-    }
-  }, [])
-
-  const toggleTheme = useCallback(() => {
-    const newTheme = theme === 'light' ? 'dark' : 'light'
-    const root = document.documentElement
-
-    // Add class to disable transitions for a single frame burst
-    root.classList.add('disable-theme-transitions')
-
-    // Flip theme classes synchronously before next paint
-    if (newTheme === 'dark') {
-      root.classList.add('dark')
-    } else {
-      root.classList.remove('dark')
-    }
-
-    // Two rAFs to ensure styles applied, then remove suppression
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        root.classList.remove('disable-theme-transitions')
-      })
-    })
-
-    // Safety fallback in case rAF chain misses
-    window.setTimeout(() => root.classList.remove('disable-theme-transitions'), 200)
-
-    setTheme(newTheme)
-    localStorage.setItem('theme', newTheme)
-  }, [theme])
-
-  if (!mounted) {
-    return null
-  }
+  const { theme, toggleTheme } = useTheme()
 
   return (
     <button

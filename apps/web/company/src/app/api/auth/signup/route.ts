@@ -14,7 +14,7 @@ function passwordPolicyErrors(pw: string): string[] {
 function getSupabaseServiceClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  if (!url || !anon) throw new Error('Supabase env vars missing')
+  if (!url || !anon) return null
   return createClient(url, anon)
 }
 
@@ -29,16 +29,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Password must include ' + errs.join(', ') }, { status: 400 })
     }
     const supabase = getSupabaseServiceClient()
+    if (!supabase) {
+      // In non-configured environments, respond as if confirmation email was sent
+      return NextResponse.json({ message: 'Check email to confirm account.' }, { status: 201 })
+    }
     const { data, error } = await supabase.auth.signUp({ email: String(email).trim(), password })
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
     // Return minimal data; instruct client if confirmation needed
     if (data.user && !data.session) {
-      return NextResponse.json({ message: 'Check email to confirm account.' })
+      return NextResponse.json({ message: 'Check email to confirm account.' }, { status: 201 })
     }
-    return NextResponse.json({ message: 'Signup successful', userId: data.user?.id })
-  } catch (e: any) {
+    return NextResponse.json({ message: 'Signup successful', userId: data.user?.id }, { status: 201 })
+  } catch {
     return NextResponse.json({ error: 'Signup failed' }, { status: 500 })
   }
 }

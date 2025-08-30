@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { Suspense, useState, useEffect } from "react"
+import type { Provider } from '@supabase/supabase-js'
 import { useRouter, useSearchParams } from "next/navigation"
 import { getSupabaseClient } from "../../lib/supabase.client"
 import { Button } from "../../components/ui/button"
@@ -17,6 +18,14 @@ type AuthError = {
 }
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#0D1117] flex items-center justify-center p-4"><div className="text-[#8B949E]">Loading…</div></div>}>
+      <LoginInner />
+    </Suspense>
+  )
+}
+
+function LoginInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [email, setEmail] = useState("")
@@ -51,14 +60,7 @@ export default function LoginPage() {
     }
   }, [searchParams])
 
-  // Force dark mode on login page
-  useEffect(() => {
-    document.documentElement.classList.add('dark')
-    return () => {
-      // Optional: restore previous theme when leaving login page
-      // document.documentElement.classList.remove('dark')
-    }
-  }, [])
+  // Dark mode now handled globally via ThemeProvider
 
   // Email validation
   const validateEmail = (email: string) => {
@@ -85,7 +87,7 @@ export default function LoginPage() {
   }
 
   // Enhanced error handling
-  const handleAuthError = (error: any) => {
+  const handleAuthError = (error: { message?: string } | Error | unknown) => {
     console.error('Auth error:', error)
     
     // Map common Supabase errors to user-friendly messages
@@ -108,8 +110,11 @@ export default function LoginPage() {
       }
     }
 
-    const authError = errorMap[error.message] || {
-      message: error.message || 'An unexpected error occurred. Please try again.',
+    const msg = (error && typeof error === 'object' && 'message' in error)
+      ? (error as { message?: string }).message
+      : undefined
+    const authError = (msg && errorMap[msg]) || {
+      message: msg || 'An unexpected error occurred. Please try again.',
       type: 'error' as const
     }
 
@@ -117,7 +122,7 @@ export default function LoginPage() {
   }
 
   // Email/password login
-  const handleEmailLogin = async (e: React.FormEvent) => {
+  const handleEmailLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     
     if (!email || !password) {
@@ -155,12 +160,12 @@ export default function LoginPage() {
       try {
         const client = getSupabaseClient()
         await client.auth.setSession({ access_token: json.access_token, refresh_token: json.refresh_token })
-      } catch (err) {
+  } catch {
         // Fallback: continue; session may already be set by cookie in future implementation
       }
       const next = searchParams.get('next')
       router.push(next || '/agents')
-    } catch (e: any) {
+  } catch {
       setError({ message: 'Invalid email or password.', type: 'error' })
     } finally {
       setLoading(false)
@@ -174,8 +179,14 @@ export default function LoginPage() {
 
     try {
       const client = getSupabaseClient()
+      const providerMap: Record<'google' | 'microsoft' | 'apple', Provider> = {
+        google: 'google',
+        // Map Microsoft button to Azure AD provider in Supabase
+        microsoft: 'azure',
+        apple: 'apple',
+      }
       const { error } = await client.auth.signInWithOAuth({
-        provider: provider as any,
+        provider: providerMap[provider],
         options: {
           redirectTo: `${window.location.origin}/auth/callback`
         }
@@ -184,8 +195,9 @@ export default function LoginPage() {
       if (error) {
         handleAuthError(error)
       }
-    } catch (e: any) {
-      handleAuthError(e)
+    } catch {
+      // Normalize error to object with message
+      handleAuthError({ message: 'OAuth error' })
     } finally {
       setOauthLoading(null)
     }
@@ -193,37 +205,23 @@ export default function LoginPage() {
 
   // Check if user is already logged in
   useEffect(() => {
-    const checkUser = async () => {
-      try {
-        const client = getSupabaseClient()
-        const { data: { user } } = await client.auth.getUser()
-        if (user) {
-          router.push('/agents')
-        }
-      } catch (error) {
-        // Ignore errors during initial check
-      }
-    }
-    checkUser()
+  // Intentionally do not auto-redirect from the login page. Users must explicitly sign in.
+  // If you want to enable 'already signed-in' behavior later, implement a server-side
+  // redirect via middleware or adjust this client check to be opt-in.
   }, [router])
 
   return (
     <div className="min-h-screen bg-[#0D1117] flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        {/* Header */}
+        {/* Header (match signup: logo + title, no brand name) */}
         <div className="text-center mb-6">
           <div className="flex items-center justify-center gap-2 mb-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-[#1F6FEB] to-[#0969DA] rounded-lg flex items-center justify-center shadow-lg hover-lift">
+            <div className="w-10 h-10 bg-gradient-to-br from-[#1F6FEB] to-[#0969DA] rounded-lg flex items-center justify-center shadow-lg">
               <Sparkles className="w-5 h-5 text-white" />
             </div>
-            <h1 className="text-2xl font-bold text-[#F0F6FC] tracking-tight">AgentAI</h1>
+            <h1 className="text-2xl font-bold text-[#F0F6FC] tracking-tight">Sign in</h1>
           </div>
-          <h2 className="text-xl font-semibold text-[#F0F6FC] mb-2">
-            Welcome back
-          </h2>
-          <p className="text-sm text-[#8B949E]">
-            Sign in to your account to continue
-          </p>
+          <p className="text-sm text-[#8B949E]">Sign in to your account to continue</p>
         </div>
 
         {/* Main Card */}
@@ -374,7 +372,7 @@ export default function LoginPage() {
             </Link>
             
             <div className="text-sm text-[#8B949E]">
-              Don't have an account?{' '}
+              Don&apos;t have an account?{' '}
               <Link
                 href="/signup"
                 className="text-[#1F6FEB] hover:text-[#0969DA] font-semibold transition-colors duration-200"

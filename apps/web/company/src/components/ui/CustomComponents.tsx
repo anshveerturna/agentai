@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useRef, useEffect } from 'react';
 
 interface ModalProps {
   isOpen: boolean;
@@ -68,7 +68,7 @@ export function Button({
   const baseClasses = "inline-flex items-center justify-center px-4 py-2 font-medium rounded-lg theme-transition focus:outline-none focus:ring-2 focus:ring-offset-2";
   
   const variantClasses = {
-    primary: "bg-blue-600 hover:bg-blue-700 text-white shadow-sm hover:shadow-md focus:ring-blue-500 disabled:bg-slate-300 disabled:hover:bg-slate-300",
+  primary: "bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm hover:shadow-md focus:ring-ring disabled:bg-muted disabled:hover:bg-muted",
     secondary: "bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 focus:ring-slate-500",
     outline: "border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 focus:ring-slate-500"
   };
@@ -112,7 +112,7 @@ export function Input({
       onChange={onChange}
       placeholder={placeholder}
       required={required}
-      className={`w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 theme-transition ${className}`}
+  className={`w-full px-4 py-3 border border-border rounded-lg bg-card text-foreground placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-ring focus:border-ring theme-transition ${className}`}
     />
   );
 }
@@ -141,7 +141,7 @@ export function Textarea({
       onChange={onChange}
       placeholder={placeholder}
       rows={rows}
-      className={`w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 theme-transition resize-none ${className}`}
+  className={`w-full px-4 py-3 border border-border rounded-lg bg-card text-foreground placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-ring focus:border-ring theme-transition resize-none ${className}`}
     />
   );
 }

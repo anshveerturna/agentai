@@ -9,7 +9,9 @@ export class AgentsController {
 
   @Get()
   findAll(@Req() req: AuthenticatedRequest) {
-    return this.agentsService.findAll(req.user.sub)
+    // Phase 1: detect companyId from header or claim (fallback). Replace with proper tenancy mapping later.
+    const companyId = (req as any).headers['x-company-id'] as string | undefined || (req.user as any).companyId
+    return this.agentsService.findAll(req.user.sub, companyId)
   }
 
   @Post()

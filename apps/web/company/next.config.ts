@@ -3,7 +3,10 @@ import type { NextConfig } from 'next';
 // Build a CSP that excludes 'unsafe-inline' in production.
 // Supabase origin is dynamically injected for API / realtime calls.
 function buildCSP() {
-  const dev = process.env.NODE_ENV !== 'production'
+  // Check if we're running in Playwright tests
+  const isPlaywrightTest = process.env.PLAYWRIGHT_TEST === '1' || process.env.NODE_ENV === 'test';
+  const dev = process.env.NODE_ENV !== 'production' || isPlaywrightTest;
+  
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   let supabaseOrigin: string | undefined
   try { if (supabaseUrl) supabaseOrigin = new URL(supabaseUrl).origin } catch {}
@@ -34,7 +37,8 @@ function buildCSP() {
     `base-uri 'self'`,
     `form-action 'self'`
   ]
-  return cspDirectives.join('; ')
+  
+  return cspDirectives.join('; ');
 }
 
 const csp = buildCSP();

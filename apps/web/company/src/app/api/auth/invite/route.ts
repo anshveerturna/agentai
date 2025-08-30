@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
     const { data, error } = await adminClient.auth.admin.inviteUserByEmail(String(email).trim())
     if (error) return NextResponse.json({ error: 'Invite failed' }, { status: 400 })
     return NextResponse.json({ message: 'Invite sent', userId: data.user?.id })
-  } catch (e) {
+  } catch {
     return NextResponse.json({ error: 'Invite failed' }, { status: 500 })
   }
 }

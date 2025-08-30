@@ -1,11 +1,12 @@
 
 import { DashboardLayout } from '../components/layout/DashboardLayout';
-import AgentList from '../components/AgentList';
-import { CreateAgentDialog } from '../components/CreateAgentDialog';
+import { AuthGate } from '../components/auth/AuthGate';
+import { Button } from '../components/ui/button'
 
 export default function HomePage() {
   return (
     <DashboardLayout>
+      <AuthGate>
       {/* Hero Section */}
       <section className="w-full flex flex-col items-center justify-center py-12 bg-gradient-to-br from-blue-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 rounded-2xl mb-8 shadow-md">
         <h1 className="text-4xl md:text-5xl font-extrabold text-primary mb-4 text-center">Describe your agent to create it</h1>
@@ -16,7 +17,7 @@ export default function HomePage() {
         </div>
         <div className="w-full max-w-xl flex flex-col items-center">
           <input type="text" placeholder="Use everyday words to describe what your agent should do" className="w-full px-6 py-4 rounded-xl border border-border bg-background text-foreground text-lg shadow focus:outline-none focus:ring-2 focus:ring-ring mb-2 theme-transition" />
-          <button className="mt-2 px-6 py-2 rounded-xl bg-primary text-primary-foreground font-bold text-base shadow hover:bg-primary/90 theme-transition">Create Agent</button>
+          <Button className="mt-2 rounded-xl font-bold text-base">Create Agent</Button>
         </div>
       </section>
 
@@ -49,7 +50,7 @@ export default function HomePage() {
               <span className="text-green-600 dark:text-green-400 text-2xl">💸</span>
             </div>
             <h3 className="font-semibold text-lg text-card-foreground">Financial Insights</h3>
-            <p className="text-muted-foreground text-sm">Help financial services professionals get quick and concise info from their org's financial documents and other available resources.</p>
+            <p className="text-muted-foreground text-sm">Help financial services professionals get quick and concise info from their org&apos;s financial documents and other available resources.</p>
             <span className="text-xs text-muted-foreground">Agent template</span>
           </div>
         </div>
@@ -73,6 +74,7 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+      </AuthGate>
     </DashboardLayout>
   );
 }

@@ -81,7 +81,30 @@ export async function POST(req: Request) {
     }
     recordSuccess(key)
     const { access_token, refresh_token, expires_in, token_type, user } = data.session
-    return NextResponse.json({ success: true, access_token, refresh_token, expires_in, token_type, user: { id: user.id, email: user.email } })
+    const res = NextResponse.json({ success: true, access_token, refresh_token, expires_in, token_type, user: { id: user.id, email: user.email } })
+    // Set HttpOnly cookies so middleware can read tokens (localStorage is not visible at the edge)
+    try {
+      const isProd = process.env.NODE_ENV === 'production'
+      res.cookies.set('sb-access-token', access_token, {
+        httpOnly: true,
+        secure: isProd,
+        sameSite: 'lax',
+        path: '/',
+        maxAge: expires_in ?? 60 * 60, // default 1h
+      })
+      if (refresh_token) {
+        res.cookies.set('sb-refresh-token', refresh_token, {
+          httpOnly: true,
+          secure: isProd,
+          sameSite: 'lax',
+          path: '/',
+          maxAge: 60 * 60 * 24 * 14, // 14 days
+        })
+      }
+    } catch {
+      // If cookie set fails, still return JSON; client-side session will work but middleware redirects may occur
+    }
+    return res
   } catch {
     return genericAuthError(400)
   } finally {

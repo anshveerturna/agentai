@@ -6,6 +6,7 @@ import AgentList from '../../components/AgentList';
 import AgentTable from '../../components/AgentTable';
 import ExploreAgents from '../../components/ExploreAgents';
 import CreateAgentModal from '../../components/CreateAgentModal';
+import type { AgentTemplate } from '../../data/templates';
 import LearningResources from '../../components/LearningResources';
 import { CreateAgentDialog } from '../../components/CreateAgentDialog';
 import { Input } from '../../components/ui/input';
@@ -17,7 +18,7 @@ export default function AgentsPage() {
   const [activeTab, setActiveTab] = useState<'all' | 'templates' | 'mine'>('all');
   const [view, setView] = useState<'grid' | 'table'>('table');
   const [createOpen, setCreateOpen] = useState(false);
-  const [prefillTemplate, setPrefillTemplate] = useState<any | null>(null);
+  const [prefillTemplate, setPrefillTemplate] = useState<AgentTemplate | null>(null);
 
   return (
     <DashboardLayout>
@@ -31,7 +32,7 @@ export default function AgentsPage() {
                 <span>/</span>
                 <span className="text-slate-700 dark:text-slate-200">Agents</span>
               </div>
-              <h1 className="text-2xl md:text-3xl font-semibold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
+              <h1 className="text-2xl md:text-3xl font-semibold tracking-tight text-foreground flex items-center gap-2">
                 Agents
                 <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded-md">
                   <Sparkles className="w-3.5 h-3.5" />
@@ -52,7 +53,7 @@ export default function AgentsPage() {
         </div>
 
         {/* Toolbar */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-3 md:p-4 mb-6">
+  <div className="bg-card border border-border rounded-lg p-3 md:p-4 mb-6">
           <div className="flex flex-col md:flex-row md:items-center gap-3">
             {/* Tabs */}
             <div className="flex items-center rounded-md bg-slate-100 dark:bg-slate-800 p-1 w-fit">
@@ -66,8 +67,8 @@ export default function AgentsPage() {
                   onClick={() => setActiveTab(key)}
                   className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
                     activeTab === key
-                      ? 'bg-white dark:bg-slate-900 shadow-sm text-slate-900 dark:text-white'
-                      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                      ? 'bg-card shadow-sm text-foreground'
+                      : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
                   {label}
@@ -104,21 +105,21 @@ export default function AgentsPage() {
         {/* Content: minimal single-column layout */}
         <div className="space-y-6">
           {/* All agents */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 md:p-6">
+          <div className="bg-card border border-border rounded-lg p-4 md:p-6">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-slate-900 dark:text-white">All agents</h2>
+              <h2 className="text-lg font-semibold text-foreground">All agents</h2>
               <div className="flex items-center gap-3">
                 <div className="hidden text-xs text-slate-500 dark:text-slate-400 md:block">Auto-refresh enabled</div>
                 <div className="inline-flex rounded-md border border-slate-200 dark:border-slate-800 overflow-hidden">
                   <button
-                    className={`px-3 py-1.5 text-sm ${view === 'grid' ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-300'}`}
+                    className={`px-3 py-1.5 text-sm ${view === 'grid' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground'}`}
                     onClick={() => setView('grid')}
                     aria-pressed={view === 'grid'}
                   >
                     Grid
                   </button>
                   <button
-                    className={`px-3 py-1.5 text-sm border-l border-slate-200 dark:border-slate-800 ${view === 'table' ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-300'}`}
+                    className={`px-3 py-1.5 text-sm border-l border-border ${view === 'table' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground'}`}
                     onClick={() => setView('table')}
                     aria-pressed={view === 'table'}
                   >

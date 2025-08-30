@@ -15,8 +15,10 @@ export function AuthGate({ children, redirectTo = '/login', loadingFallback = nu
   const pathname = usePathname()
   const [status, setStatus] = useState<'checking' | 'authed' | 'anon' | 'error'>('checking')
   const [errMsg, setErrMsg] = useState<string | null>(null)
+  const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
+    setMounted(true)
     let cancelled = false
     const run = async () => {
       try {
@@ -41,6 +43,8 @@ export function AuthGate({ children, redirectTo = '/login', loadingFallback = nu
     return () => { cancelled = true }
   }, [router, redirectTo, pathname])
 
+  // Hide any loading fallback until after hydration to prevent SSR flash
+  if (!mounted) return null
   if (status === 'checking') return <>{loadingFallback}</>
   if (status === 'error') return <div className="p-6 text-sm text-red-500">{errMsg}</div>
   if (status === 'anon') return <>{loadingFallback}</>

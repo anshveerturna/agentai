@@ -10,7 +10,7 @@ interface AgentTableProps {
 
 // Agent type imported from apiClient
 
-function timeAgo(value?: string) {
+function timeAgo(value?: string | null) {
   if (!value) return '—';
   const d = new Date(value);
   if (isNaN(d.getTime())) return '—';
@@ -33,7 +33,7 @@ export default function AgentTable({ search = '' }: AgentTableProps) {
 
   if (isLoading) return <p className="text-slate-500">Loading agents...</p>;
   if (error) {
-    const message = (error as any)?.message || 'Unknown error';
+    const message = (error && typeof error === 'object' && 'message' in error ? (error as { message?: string }).message : undefined) || 'Unknown error';
     return (
       <div className="rounded-md border border-red-200 bg-red-50 text-red-700 p-4 flex items-center justify-between">
         <span>Error loading agents: {message}</span>
@@ -88,8 +88,8 @@ export default function AgentTable({ search = '' }: AgentTableProps) {
                 </div>
               </td>
               <td className="py-4 pr-4 text-slate-700 dark:text-slate-300">{typeof a.type === 'string' ? a.type : '—'}</td>
-              <td className="py-4 pr-4 text-slate-700 dark:text-slate-300">{timeAgo((a.updatedAt || a.updated_at) as string | undefined)}</td>
-              <td className="py-4 pr-4 text-slate-700 dark:text-slate-300">{a.lastPublishedAt ? timeAgo(a.lastPublishedAt as string) : 'Never'}</td>
+              <td className="py-4 pr-4 text-slate-700 dark:text-slate-300">{timeAgo(typeof (a.updatedAt || a.updated_at) === 'string' ? (a.updatedAt || a.updated_at) as string : undefined)}</td>
+              <td className="py-4 pr-4 text-slate-700 dark:text-slate-300">{typeof a.lastPublishedAt === 'string' ? timeAgo(a.lastPublishedAt) : 'Never'}</td>
               <td className="py-4 pr-4 text-slate-700 dark:text-slate-300">{typeof (a.owner || a.ownerName) === 'string' ? String(a.owner || a.ownerName) : '—'}</td>
               <td className="py-4 pr-4 text-slate-500">{typeof a.protectionStatus === 'string' ? a.protectionStatus : '—'}</td>
               <td className="py-4 text-slate-500">{typeof a.engagedSessions === 'number' ? a.engagedSessions : '—'}</td>
