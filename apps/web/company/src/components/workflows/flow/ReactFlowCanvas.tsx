@@ -16,6 +16,8 @@ import { Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useWorkflowStore } from '@/store/workflowStore';
 import type { NodeModel, Port } from '@/types/workflow';
+import ActionNode, { type ActionNodeData } from './nodes/ActionNode';
+import { ActionLibrary } from '@/components/workflows/ActionLibrary';
 
 export type AddNodeFn = (type: string, initial?: Partial<Node>) => void;
 
@@ -24,7 +26,7 @@ export interface ReactFlowCanvasProps {
   onAddNodeRequest?: () => void;
   onReady?: (api: {
     addNode: AddNodeFn;
-    instance: ReactFlowInstance;
+    instance: ReactFlowInstance<any, any>;
     zoomIn: () => void;
     zoomOut: () => void;
     fitView: () => void;
@@ -39,13 +41,13 @@ export interface ReactFlowCanvasProps {
 }
 
 export default function ReactFlowCanvas({ onNodeSelect, onAddNodeRequest, onReady, mode = 'select', initialMinimap = true, initialGrid = true }: ReactFlowCanvasProps) {
-  // Local UI toggles / rf instance
+  // Local rf helpers
   const [rfSelection, setRfSelection] = useState<string | null>(null);
-  const [instance, setInstance] = useState<ReactFlowInstance | null>(null);
+  const [instance, setInstance] = useState<ReactFlowInstance<any, any> | null>(null);
   const [showMinimap, setShowMinimap] = useState(initialMinimap);
   const [showGrid, setShowGrid] = useState(initialGrid);
+  const nodeTypes: NodeTypes = useMemo(() => ({ action: ActionNode as any }), []);
 
-  const nodeTypes: NodeTypes = useMemo(() => ({}), []);
   // Store bindings
   const {
     workflow,
@@ -71,51 +73,45 @@ export default function ReactFlowCanvas({ onNodeSelect, onAddNodeRequest, onRead
     clearSelection: s.clearSelection,
   }));
 
-  // Map store nodes -> React Flow nodes
-  const rfNodes = useMemo<Node[]>(() => {
-    return workflow.nodes.map((n: NodeModel) => ({
+  // nodes/edges mapping
+  const rfNodes = useMemo<Node[]>(() => (
+    workflow.nodes.map((n: NodeModel) => ({
       id: n.id,
-      type: n.kind as string, // fallback to default renderer
+      type: 'action',
       position: { x: n.position.x, y: n.position.y },
-      data: { label: n.label, kind: n.kind, config: n.config },
+      data: { 
+        label: n.label, 
+        kind: n.kind, 
+        config: n.config,
+        nodeType: (n as any)?.config?.nodeType || 'action' 
+      } as any,
       selected: !!n.selected,
       width: n.size?.width,
       height: n.size?.height,
-    }));
-  }, [workflow.nodes]);
+    }))
+  ), [workflow.nodes]);
 
-  // Map store edges -> React Flow edges (basic center-to-center for now)
-  const rfEdges = useMemo<Edge[]>(() => {
-    return workflow.edges.map((e) => ({
-      id: e.id,
-      source: e.from.nodeId,
-      target: e.to.nodeId,
-      // sourceHandle: e.from.portId, // reserved for custom handles later
-      // targetHandle: e.to.portId,
-      animated: false,
-    }));
-  }, [workflow.edges]);
+  const rfEdges = useMemo<Edge[]>(() => (
+    workflow.edges.map((e) => ({ id: e.id, source: e.from.nodeId, target: e.to.nodeId }))
+  ), [workflow.edges]);
 
-  // Handle connections -> store edge
+  // connection handler to store
   const onConnect = useCallback((connection: Edge | Connection) => {
-    const source = (connection as Connection).source;
-    const target = (connection as Connection).target;
+    const c = connection as Connection;
+    const { source, target, sourceHandle, targetHandle } = c;
     if (!source || !target) return;
     const fromNode = workflow.nodes.find((n) => n.id === source);
     const toNode = workflow.nodes.find((n) => n.id === target);
     if (!fromNode || !toNode) return;
-    const findPort = (list: Port[], dir: 'in' | 'out') => list.find((p) => p.direction === dir)?.id;
-    const fromPort = findPort(fromNode.ports || [], 'out') || (fromNode.ports[0]?.id as string);
-    const toPort = findPort(toNode.ports || [], 'in') || (toNode.ports[0]?.id as string);
-    if (!fromPort || !toPort) return;
-    storeAddEdge({
-      from: { nodeId: fromNode.id, portId: fromPort },
-      to: { nodeId: toNode.id, portId: toPort },
-      kind: 'control',
-    });
+    const findPort = (list: Port[], dir: 'in'|'out') => list.find((p) => p.direction === dir)?.id;
+    const fromPort = (sourceHandle as string) || findPort(fromNode.ports || [], 'out') || (fromNode.ports[0]?.id as string);
+    const toPort = (targetHandle as string) || findPort(toNode.ports || [], 'in') || (toNode.ports[0]?.id as string);
+    if (fromPort && toPort) {
+      storeAddEdge({ from: { nodeId: fromNode.id, portId: fromPort }, to: { nodeId: toNode.id, portId: toPort }, kind: 'control' });
+    }
   }, [workflow.nodes, storeAddEdge]);
 
-  // Add node via store and basic ports
+  // add node via store
   const addNode: AddNodeFn = useCallback((type: string, initial?: Partial<Node>) => {
     const inPort: Port = { id: crypto.randomUUID(), name: 'in', direction: 'in', kind: 'control' } as Port;
     const outPort: Port = { id: crypto.randomUUID(), name: 'out', direction: 'out', kind: 'control' } as Port;
@@ -126,13 +122,12 @@ export default function ReactFlowCanvas({ onNodeSelect, onAddNodeRequest, onRead
       position: initial?.position ?? { x: 100, y: 100 },
       size: { width: 220, height: 80 },
       ports: [inPort, outPort],
-      config: {},
+      config: { type },
     });
-    // select newly added
     selectNodes([id]);
   }, [storeAddNode, selectNodes]);
 
-  // Selection sync from RF to store + notify parent
+  // selection sync
   const onSelectionChange = useCallback(({ nodes }: { nodes: Node[] }) => {
     const node = nodes[0] ?? null;
     setRfSelection(node?.id ?? null);
@@ -140,20 +135,16 @@ export default function ReactFlowCanvas({ onNodeSelect, onAddNodeRequest, onRead
     onNodeSelect?.(node);
   }, [onNodeSelect, selectNodes, clearSelection]);
 
-  // Node change handler for position/removal
+  // node change: move/remove
   const onNodesChange = useCallback((changes: any[]) => {
-    // Aggregate moves by id
     const moved: Record<string, { x: number; y: number }> = {};
     const removed: string[] = [];
     for (const ch of changes) {
-      if (ch.type === 'position' && ch.position) {
-        moved[ch.id] = ch.position;
-      }
+      if (ch.type === 'position' && ch.position) moved[ch.id] = ch.position;
       if (ch.type === 'remove') removed.push(ch.id);
     }
     const movedIds = Object.keys(moved);
     if (movedIds.length) {
-      // compute deltas per node from current store position
       movedIds.forEach((id) => {
         const n = workflow.nodes.find((x) => x.id === id);
         if (!n) return;
@@ -165,16 +156,57 @@ export default function ReactFlowCanvas({ onNodeSelect, onAddNodeRequest, onRead
     if (removed.length) removeNodes(removed);
   }, [workflow.nodes, moveNodes, removeNodes]);
 
-  // Edges change: support remove only for now
-  const onEdgesChange = useCallback((changes: any[]) => {
-    // Future: route edge removals to store
-    // No-op until edge UI is added
+  const onEdgesChange = useCallback((_changes: any[]) => {
+    // TODO: support edge removal if needed
   }, []);
+
+  // Action Library state
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [anchor, setAnchor] = useState<{ nodeId: string; side: 'left'|'right'|'top'|'bottom' }|null>(null);
+  const [pendingEditNodeId, setPendingEditNodeId] = useState<string|null>(null);
+
+  const onPlusClick = useCallback((nodeId: string, side: 'left'|'right'|'top'|'bottom') => {
+    setAnchor({ nodeId, side });
+    setLibraryOpen(true);
+  }, []);
+
+  const rfNodesWithCallbacks = useMemo(() => rfNodes.map((n) => ({
+    ...n,
+    data: {
+      ...(n.data as ActionNodeData),
+      onPlusClick: (side: 'left'|'right'|'top'|'bottom') => onPlusClick(n.id, side),
+      onAction: (action: 'edit'|'change'|'run'|'duplicate'|'delete') => {
+        if (action === 'edit') {
+          setPendingEditNodeId(n.id);
+          selectNodes([n.id]);
+        } else if (action === 'change') {
+          setAnchor({ nodeId: n.id, side: 'right' });
+          setLibraryOpen(true);
+        } else if (action === 'duplicate') {
+          const base = workflow.nodes.find((x) => x.id === n.id);
+          if (!base) return;
+          const newId = storeAddNode({
+            kind: base.kind,
+            label: base.label,
+            position: { x: base.position.x + 260, y: base.position.y },
+            size: base.size,
+            ports: base.ports,
+            config: base.config,
+          });
+          selectNodes([newId]);
+        } else if (action === 'delete') {
+          removeNodes([n.id]);
+        } else if (action === 'run') {
+          console.info('Run node', n.id);
+        }
+      }
+    } as ActionNodeData,
+  })), [rfNodes, onPlusClick, selectNodes, storeAddNode, workflow.nodes, removeNodes]);
 
   return (
     <div className="w-full h-full relative">
       <ReactFlow
-        nodes={rfNodes}
+        nodes={rfNodesWithCallbacks}
         edges={rfEdges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
@@ -191,12 +223,12 @@ export default function ReactFlowCanvas({ onNodeSelect, onAddNodeRequest, onRead
   zoomOnScroll={false}
   zoomOnPinch
         defaultViewport={{ x: viewport.offset.x, y: viewport.offset.y, zoom: viewport.zoom }}
-        onMoveEnd={(_, viewportState) => {
-          if (!viewportState) return;
-          setViewport({ zoom: viewportState.zoom, offset: { x: viewportState.x, y: viewportState.y } });
+        onMoveEnd={(_, vp) => {
+          if (!vp) return;
+          setViewport({ zoom: vp.zoom, offset: { x: vp.x, y: vp.y } });
         }}
         onInit={(inst) => {
-          setInstance(inst);
+          setInstance(inst as any);
           const safeZoomStep = 0.2;
           const safeZoomIn = () => {
             try {
@@ -225,7 +257,7 @@ export default function ReactFlowCanvas({ onNodeSelect, onAddNodeRequest, onRead
           };
           onReady?.({
             addNode,
-            instance: inst,
+            instance: inst as any,
             zoomIn: safeZoomIn,
             zoomOut: safeZoomOut,
             fitView: safeFitView,
@@ -235,18 +267,12 @@ export default function ReactFlowCanvas({ onNodeSelect, onAddNodeRequest, onRead
               // handled via props in parent; this is a no-op helper for convenience
       },
       updateNodeData: (id: string, data: Record<string, any>) => {
-        // Only patch known fields for now (label, config)
         const patch: Partial<NodeModel> = {};
         if (typeof (data as any).label !== 'undefined') (patch as any).label = (data as any).label;
         if (typeof (data as any).config !== 'undefined') (patch as any).config = (data as any).config;
         updateNode(id, patch);
       }
           });
-          // Ensure RF reflects store viewport immediately
-          try {
-            // @ts-ignore
-            inst.setViewport?.({ x: viewport.offset.x, y: viewport.offset.y, zoom: viewport.zoom }, { duration: 0 });
-          } catch {}
         }}
         fitView
       >
@@ -275,7 +301,7 @@ export default function ReactFlowCanvas({ onNodeSelect, onAddNodeRequest, onRead
             </div>
             <h3 className="text-xl font-semibold">Start Building Your Workflow</h3>
             <p className="text-muted-foreground mb-6">Create your first workflow by adding a trigger component</p>
-            <Button onClick={onAddNodeRequest} className="gap-2">
+            <Button onClick={() => { setAnchor(null); setLibraryOpen(true); }} className="gap-2">
               {/* small plus square */}
               <span className="w-3.5 h-3.5 rounded-sm bg-primary-foreground" />
               Add Trigger
@@ -283,6 +309,53 @@ export default function ReactFlowCanvas({ onNodeSelect, onAddNodeRequest, onRead
           </div>
         </div>
       )}
+
+      {/* Action Library panel */}
+      <ActionLibrary
+        open={libraryOpen}
+        onClose={() => setLibraryOpen(false)}
+        onSelect={(action) => {
+          let position = { x: 100, y: 100 };
+          let fromId: string | null = null;
+          if (anchor) {
+            const base = workflow.nodes.find((n) => n.id === anchor.nodeId);
+            if (base) {
+              const dx = anchor.side === 'left' ? -300 : anchor.side === 'right' ? 300 : 0;
+              const dy = anchor.side === 'top' ? -220 : anchor.side === 'bottom' ? 220 : 0;
+              position = { x: base.position.x + dx, y: base.position.y + dy };
+              fromId = base.id;
+            }
+          }
+          const newId = storeAddNode({
+            kind: 'custom',
+            label: action.label,
+            position,
+            size: { width: 140, height: 32 },
+            ports: [
+              { id: crypto.randomUUID(), name: 'in', direction: 'in', kind: 'control' } as Port,
+              { id: crypto.randomUUID(), name: 'out', direction: 'out', kind: 'control' } as Port,
+            ],
+            config: { 
+              type: action.id,
+              nodeType: action.nodeType || 'action'
+            },
+          });
+          if (fromId) {
+            const state = (useWorkflowStore as any).getState?.() ?? null;
+            const fromNode = (state?.workflow?.nodes ?? workflow.nodes).find((n: any) => n.id === fromId);
+            const newNode = (state?.workflow?.nodes ?? workflow.nodes).find((n: any) => n.id === newId);
+            if (fromNode && newNode) {
+              const outPort = (fromNode.ports.find((p: Port) => p.direction === 'out') ?? fromNode.ports[0])?.id as string | undefined;
+              const inPort = (newNode.ports.find((p: Port) => p.direction === 'in') ?? newNode.ports[0])?.id as string | undefined;
+              if (outPort && inPort) {
+                storeAddEdge({ from: { nodeId: fromNode.id, portId: outPort }, to: { nodeId: newId, portId: inPort }, kind: 'control' });
+              }
+            }
+          }
+          selectNodes([newId]);
+          setLibraryOpen(false);
+        }}
+      />
     </div>
   );
 }

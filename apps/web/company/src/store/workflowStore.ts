@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { StateCreator } from "zustand";
 import { devtools } from "zustand/middleware";
-import { produce } from "immer";
+import { produce, enableMapSet } from "immer";
 import type {
   Edge,
   HistoryEntry,
@@ -13,6 +13,9 @@ import type {
 } from "@/types/workflow";
 
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+
+// Enable Map/Set support for Immer (required because we mutate Sets in selection/history)
+enableMapSet();
 
 function uuid(): UUID {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
@@ -60,7 +63,7 @@ export type WorkflowStore = WorkflowState & Actions;
 
 const initialState: WorkflowState = {
   workflow: emptyWorkflow(),
-  viewport: { zoom: 1, offset: { x: 0, y: 0 } },
+  viewport: { zoom: 0.85, offset: { x: 0, y: 0 } },
   selection: { nodes: new Set(), edges: new Set() },
   history: [],
   redoStack: [],
@@ -218,7 +221,7 @@ const creator: StateCreator<
             kind: (node.kind ?? "action") as NodeModel["kind"],
             label: node.label ?? "Node",
             position: node.position ?? { x: 0, y: 0 },
-            size: node.size ?? { width: 200, height: 80 },
+            size: node.size ?? { width: 140, height: 32 },
             ports: node.ports ?? [],
             config: node.config ?? {},
           });
@@ -334,18 +337,32 @@ export const useWorkflowStore = create<WorkflowStore>()(devtools(creator));
 // Persistence (simple localStorage). This is optional and safe in browser only.
 if (typeof window !== "undefined") {
   const KEY = "workflow/local";
+  const VERSION_KEY = "workflow/version";
+  const CURRENT_VERSION = "4"; // Increment to force reset of defaults
+  
   try {
-    const raw = localStorage.getItem(KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      useWorkflowStore.setState((prev) => ({
-        ...prev,
-        workflow: {
-          ...prev.workflow,
-          ...parsed.workflow,
-          // ensure sets are proper types
-        },
-      }));
+    const storedVersion = localStorage.getItem(VERSION_KEY);
+    if (storedVersion !== CURRENT_VERSION) {
+      // Clear old data when version changes
+      localStorage.removeItem(KEY);
+      localStorage.setItem(VERSION_KEY, CURRENT_VERSION);
+    } else {
+      const raw = localStorage.getItem(KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        useWorkflowStore.setState((prev) => ({
+          ...prev,
+          workflow: {
+            ...prev.workflow,
+            ...parsed.workflow,
+            // ensure sets are proper types
+          },
+          // Only restore viewport if it exists and has a reasonable zoom
+          ...(parsed.viewport && parsed.viewport.zoom >= 0.1 && parsed.viewport.zoom <= 3 
+            ? { viewport: parsed.viewport }
+            : {})
+        }));
+      }
     }
   } catch {}
 

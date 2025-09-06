@@ -22,22 +22,17 @@ export function getSupabase(): SupabaseClient {
 //   // ... your auth / session logic
 // }
 
-// Public routes that should bypass auth checks
-const PUBLIC_PREFIXES = ['/login', '/signup', '/auth/callback', '/_next', '/public', '/favicon.ico']
-const PROTECTED_PREFIXES = ['/']
+// Public route prefixes (exact or descendants). Everything else (except API + static) requires auth.
+const PUBLIC_PREFIXES = ['/login', '/signup', '/reset', '/auth/callback', '/_next', '/public', '/favicon.ico']
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
-  // Bypass for public paths
-  if (PUBLIC_PREFIXES.some(p => pathname === p || pathname.startsWith(p + '/'))) {
-    return NextResponse.next()
-  }
-  // Never guard API routes
-  if (pathname.startsWith('/api/')) {
-    return NextResponse.next()
-  }
-  const needsAuth = PROTECTED_PREFIXES.some(p => pathname === p || pathname.startsWith(p + '/'))
-  if (!needsAuth) return NextResponse.next()
+  // Allow public prefixes
+  if (PUBLIC_PREFIXES.some(p => pathname === p || pathname.startsWith(p + '/'))) return NextResponse.next()
+  // Allow API (own auth) & Next static
+  if (pathname.startsWith('/api/') || pathname.startsWith('/_next/')) return NextResponse.next()
+  if (pathname === '/favicon.ico') return NextResponse.next()
+  // All other routes are protected (includes '/agents', '/', etc.)
 
   try {
     const authHeader = req.headers.get('authorization')
@@ -46,9 +41,7 @@ export async function middleware(req: NextRequest) {
       ? authHeader.slice(7)
       : req.cookies.get('sb-access-token')?.value || req.cookies.get('sb:token')?.value
 
-    if (!token) {
-      return redirectToLogin(req)
-    }
+  if (!token) return redirectToLogin(req)
 
     // Lightweight verification: decode payload (no signature validation at edge here) to check expiry.
     const [, payloadB64] = token.split('.')
@@ -61,7 +54,9 @@ export async function middleware(req: NextRequest) {
     } catch {
       return redirectToLogin(req)
     }
-    return NextResponse.next()
+  const res = NextResponse.next()
+  res.headers.set('x-auth-middleware', 'allow')
+  return res
   } catch {
     return redirectToLogin(req)
   }
@@ -75,8 +70,6 @@ function redirectToLogin(req: NextRequest) {
 
 // Guard most routes except Next.js internals and API; adjust as needed
 export const config = {
-  matcher: [
-    '/((?!api|_next/static|_next/image|favicon.ico|public/).*)',
-  ],
+  matcher: ['/((?!_next/image|_next/static|favicon.ico).*)']
 }
 
