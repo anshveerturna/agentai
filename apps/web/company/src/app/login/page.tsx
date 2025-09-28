@@ -147,11 +147,12 @@ function LoginInner() {
       })
       const json = await res.json().catch(() => ({}))
       if (!res.ok || !json.success) {
+        const serverMsg = typeof json?.message === 'string' ? json.message : undefined
         // Map 429 to friendly message
         if (res.status === 429) {
-          setError({ message: json.message || 'Too many attempts. Please wait and try again later.', type: 'warning' })
+          setError({ message: serverMsg || 'Too many attempts. Please wait and try again later.', type: 'warning' })
         } else {
-          setError({ message: 'Invalid email or password.', type: 'error' })
+          setError({ message: serverMsg || 'Invalid email or password.', type: 'error' })
         }
         return
       }

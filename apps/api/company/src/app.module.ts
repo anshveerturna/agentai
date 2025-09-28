@@ -10,6 +10,7 @@ import { CorrelationIdMiddleware } from './common/middleware/correlation-id.midd
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AgentsModule } from './agents/agents.module';
+import { WorkflowsModule } from './workflows/workflows.module';
 
 @Module({
   imports: [
@@ -25,7 +26,8 @@ import { AgentsModule } from './agents/agents.module';
         limit: 10, // Stricter bucket for auth-sensitive endpoints if used later
       },
     ]),
-    AgentsModule,
+  AgentsModule,
+  WorkflowsModule,
   ],
   controllers: [AppController],
   providers: [

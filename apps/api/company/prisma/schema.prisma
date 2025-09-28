@@ -21,3 +21,52 @@ model Agent {
   @@index([companyId])
   @@index([userId])
 }
+
+/// Workflows are graph-based definitions used by the app.
+model Workflow {
+  id            String   @id @default(uuid())
+  name          String
+  description   String?
+  graph         Json
+  nodeOverrides Json
+  version       Int      @default(1)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  versions WorkflowVersion[]
+  runs     WorkflowRun[]
+
+  @@index([updatedAt])
+}
+
+model WorkflowVersion {
+  id          String   @id @default(uuid())
+  workflowId  String
+  label       String?
+  name        String
+  description String?
+  graph       Json
+  createdAt   DateTime @default(now())
+
+  // Relations
+  workflow Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@index([workflowId])
+  @@index([createdAt])
+}
+
+model WorkflowRun {
+  id          String   @id @default(uuid())
+  workflowId  String
+  status      String
+  input       Json?
+  result      Json?
+  createdAt   DateTime @default(now())
+
+  // Relations
+  workflow Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@index([workflowId])
+  @@index([createdAt])
+}

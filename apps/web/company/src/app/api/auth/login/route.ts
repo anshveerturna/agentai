@@ -48,8 +48,12 @@ function computeDelayMs(rec?: AttemptRecord) {
   return Math.min(BASE_DELAY_MS + dynamic, MAX_DELAY_MS)
 }
 
-function genericAuthError(status = 400) {
-  return NextResponse.json({ success: false, message: 'Invalid email or password.' }, { status })
+function genericAuthError(status = 400, message?: string) {
+  const isDev = process.env.NODE_ENV !== 'production'
+  return NextResponse.json(
+    { success: false, message: message || 'Invalid email or password.' },
+    { status }
+  )
 }
 
 export async function POST(req: Request) {
@@ -69,10 +73,40 @@ export async function POST(req: Request) {
     if (delayMs > 0) await new Promise(r => setTimeout(r, delayMs))
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
     const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-    if (!supabaseUrl || !anonKey) return genericAuthError(500)
+    const isDev = process.env.NODE_ENV !== 'production'
+    if (!supabaseUrl || !anonKey) {
+      console.error('[auth/login] Missing Supabase env vars. Check NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY')
+      return NextResponse.json({ success: false, message: 'Auth not configured.' }, { status: 500 })
+    }
+    if (isDev && (supabaseUrl.includes('YOUR_PROJECT_REF') || anonKey.includes('YOUR_SUPABASE_ANON_KEY'))) {
+      console.error('[auth/login] Placeholder Supabase env values detected. Update .env.local with real project ref and anon key.')
+      return NextResponse.json({ success: false, message: 'Supabase environment variables are placeholders. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in apps/web/company/.env.local and restart dev server.' }, { status: 500 })
+    }
     const client = createClient(supabaseUrl, anonKey, { auth: { persistSession: false } })
     const { data, error } = await client.auth.signInWithPassword({ email: normEmail, password })
     if (error || !data?.session) {
+      if (error) {
+        // Log server-side for debugging
+        console.error('[auth/login] signInWithPassword error:', { message: error.message, name: (error as any)?.name, status: (error as any)?.status })
+        // Provide specific messaging for common cases
+        if (error.message?.toLowerCase().includes('email not confirmed')) {
+          return NextResponse.json({ success: false, message: 'Please confirm your email before signing in.' }, { status: 400 })
+        }
+        if ((error as any)?.status === 429 || error.message?.toLowerCase().includes('too many')) {
+          const updated = recordFailure(key)
+          if (updated.lockUntil && Date.now() < updated.lockUntil) {
+            return NextResponse.json({ success: false, message: 'Too many attempts. Please wait and try again later.' }, { status: 429 })
+          }
+        }
+        if (isDev) {
+          // In development, return the underlying Supabase error message for easier debugging
+          return NextResponse.json({ success: false, message: error.message || 'Authentication failed.' }, { status: 400 })
+        }
+      }
+      if (!error && isDev) {
+        console.error('[auth/login] No session and no error returned by Supabase. Possible misconfiguration or email confirmation required.')
+        return NextResponse.json({ success: false, message: 'Authentication failed: no session returned. Check Supabase project URL/key and user confirmation status.' }, { status: 400 })
+      }
       const updated = recordFailure(key)
       if (updated.lockUntil && Date.now() < updated.lockUntil) {
         return NextResponse.json({ success: false, message: 'Too many attempts. Please wait and try again later.' }, { status: 429 })

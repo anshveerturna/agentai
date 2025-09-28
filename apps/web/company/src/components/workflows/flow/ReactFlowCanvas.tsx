@@ -9,7 +9,8 @@ import {
   Edge,
   Node,
   NodeTypes,
-  ReactFlowInstance
+  ReactFlowInstance,
+  MarkerType
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Zap } from 'lucide-react';
@@ -19,10 +20,12 @@ import type { NodeModel, Port } from '@/types/workflow';
 import ActionNode, { type ActionNodeData } from './nodes/ActionNode';
 import { ActionLibrary } from '@/components/workflows/ActionLibrary';
 
-export type AddNodeFn = (type: string, initial?: Partial<Node>) => void;
+export type AddNodeFn = (type: string, initial?: Partial<Node>) => string;
 
 export interface ReactFlowCanvasProps {
   onNodeSelect?: (node: Node | null) => void;
+  onNodeClick?: (node: Node) => void;
+  onPaneClick?: (pos: { x: number; y: number }) => void;
   onAddNodeRequest?: () => void;
   onReady?: (api: {
     addNode: AddNodeFn;
@@ -34,13 +37,14 @@ export interface ReactFlowCanvasProps {
     toggleGrid: () => void;
     setMode: (mode: 'pan' | 'select') => void;
     updateNodeData: (id: string, data: Record<string, any>) => void;
+    addEdge: (fromId: string, toId: string, kind?: 'control' | 'data' | 'error') => void;
   }) => void;
   mode?: 'pan' | 'select';
   initialMinimap?: boolean;
   initialGrid?: boolean;
 }
 
-export default function ReactFlowCanvas({ onNodeSelect, onAddNodeRequest, onReady, mode = 'select', initialMinimap = true, initialGrid = true }: ReactFlowCanvasProps) {
+export default function ReactFlowCanvas({ onNodeSelect, onNodeClick, onPaneClick, onAddNodeRequest, onReady, mode = 'select', initialMinimap = true, initialGrid = true }: ReactFlowCanvasProps) {
   // Local rf helpers
   const [rfSelection, setRfSelection] = useState<string | null>(null);
   const [instance, setInstance] = useState<ReactFlowInstance<any, any> | null>(null);
@@ -83,7 +87,8 @@ export default function ReactFlowCanvas({ onNodeSelect, onAddNodeRequest, onRead
         label: n.label, 
         kind: n.kind, 
         config: n.config,
-        nodeType: (n as any)?.config?.nodeType || 'action' 
+        nodeType: (n as any)?.config?.nodeType || 'action',
+        ports: n.ports,
       } as any,
       selected: !!n.selected,
       width: n.size?.width,
@@ -92,7 +97,21 @@ export default function ReactFlowCanvas({ onNodeSelect, onAddNodeRequest, onRead
   ), [workflow.nodes]);
 
   const rfEdges = useMemo<Edge[]>(() => (
-    workflow.edges.map((e) => ({ id: e.id, source: e.from.nodeId, target: e.to.nodeId }))
+    workflow.edges.map((e) => ({
+      id: e.id,
+      source: e.from.nodeId,
+      target: e.to.nodeId,
+      sourceHandle: e.from.portId as any,
+      targetHandle: e.to.portId as any,
+      // show directional arrowheads
+      markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18, color: e.kind === 'error' ? '#f87171' : e.kind === 'data' ? '#a78bfa' : '#60a5fa' },
+      style: {
+        stroke: e.kind === 'error' ? '#f87171' : e.kind === 'data' ? '#a78bfa' : '#60a5fa',
+        strokeWidth: 2,
+        strokeDasharray: e.kind === 'error' ? '5,5' : undefined,
+      },
+      type: 'smoothstep',
+    }))
   ), [workflow.edges]);
 
   // connection handler to store
@@ -113,18 +132,46 @@ export default function ReactFlowCanvas({ onNodeSelect, onAddNodeRequest, onRead
 
   // add node via store
   const addNode: AddNodeFn = useCallback((type: string, initial?: Partial<Node>) => {
-    const inPort: Port = { id: crypto.randomUUID(), name: 'in', direction: 'in', kind: 'control' } as Port;
-    const outPort: Port = { id: crypto.randomUUID(), name: 'out', direction: 'out', kind: 'control' } as Port;
-    const kind = type === 'trigger' ? 'trigger' : 'custom';
+    const deriveNodeType = (t: string) => (
+      t === 'text' ? 'text'
+      : t === 'condition' || t === 'split' ? 'condition'
+      : t.includes('http') ? 'http'
+      : t.includes('table') ? 'table'
+      : t.includes('interface') ? 'interface'
+      : t.includes('chat') || t.includes('bot') ? 'chat'
+      : t.includes('agent') ? 'agent'
+      : 'action'
+    );
+    const nodeType = deriveNodeType(type);
+    const kind: NodeModel['kind'] = type === 'trigger' ? 'trigger' : (type === 'condition' || type === 'split') ? 'condition' : 'custom';
+    let ports: Port[] = [];
+    let size = { width: 220, height: 80 };
+    if (type === 'text') {
+      ports = [];
+      size = { width: 200, height: 28 };
+    } else if (type === 'condition' || type === 'split') {
+      ports = [
+        { id: crypto.randomUUID(), name: 'in', direction: 'in', kind: 'control' } as Port,
+        { id: crypto.randomUUID(), name: 'true', direction: 'out', kind: 'control' } as Port,
+        { id: crypto.randomUUID(), name: 'false', direction: 'out', kind: 'control' } as Port,
+      ];
+      size = { width: 220, height: 90 };
+    } else {
+      ports = [
+        { id: crypto.randomUUID(), name: 'in', direction: 'in', kind: 'control' } as Port,
+        { id: crypto.randomUUID(), name: 'out', direction: 'out', kind: 'control' } as Port,
+      ];
+    }
     const id = storeAddNode({
-      kind: kind as NodeModel['kind'],
-      label: (initial?.data as any)?.label ?? type,
+      kind,
+      label: (initial?.data as any)?.label ?? (type === 'text' ? 'Text' : type === 'condition' || type === 'split' ? 'Condition' : type),
       position: initial?.position ?? { x: 100, y: 100 },
-      size: { width: 220, height: 80 },
-      ports: [inPort, outPort],
-      config: { type },
+      size,
+      ports,
+      config: { type, nodeType },
     });
     selectNodes([id]);
+    return id;
   }, [storeAddNode, selectNodes]);
 
   // selection sync
@@ -208,10 +255,34 @@ export default function ReactFlowCanvas({ onNodeSelect, onAddNodeRequest, onRead
       <ReactFlow
         nodes={rfNodesWithCallbacks}
         edges={rfEdges}
+        defaultEdgeOptions={{
+          markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18, color: '#60a5fa' },
+          style: { stroke: '#60a5fa', strokeWidth: 2 },
+          type: 'smoothstep',
+        }}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onSelectionChange={onSelectionChange}
+        onPaneClick={(e) => {
+          onNodeSelect?.(null);
+          try {
+            const ev = e as unknown as { clientX: number; clientY: number };
+            const pt = (instance as any)?.screenToFlowPosition?.({ x: ev.clientX, y: ev.clientY });
+            if (pt && typeof pt.x === 'number' && typeof pt.y === 'number') {
+              (typeof (onPaneClick) === 'function') && onPaneClick?.(pt as { x: number; y: number });
+              return;
+            }
+          } catch {}
+          // Fallback using viewport if instance conversion not available
+          const ev = e as unknown as { clientX: number; clientY: number };
+          const px = ev.clientX;
+          const py = ev.clientY;
+          const x = (px - viewport.offset.x) / viewport.zoom;
+          const y = (py - viewport.offset.y) / viewport.zoom;
+          (typeof (onPaneClick) === 'function') && onPaneClick?.({ x, y });
+        }}
+        onNodeClick={(_, node) => onNodeClick?.(node as Node)}
         nodeTypes={nodeTypes}
         panOnDrag={mode === 'pan'}
         selectionOnDrag={mode === 'select'}
@@ -269,8 +340,27 @@ export default function ReactFlowCanvas({ onNodeSelect, onAddNodeRequest, onRead
       updateNodeData: (id: string, data: Record<string, any>) => {
         const patch: Partial<NodeModel> = {};
         if (typeof (data as any).label !== 'undefined') (patch as any).label = (data as any).label;
-        if (typeof (data as any).config !== 'undefined') (patch as any).config = (data as any).config;
+        if (typeof (data as any).config !== 'undefined') {
+          try {
+            const state = (useWorkflowStore as any).getState?.();
+            const existing = state?.workflow?.nodes?.find((n: any) => n.id === id)?.config ?? {};
+            (patch as any).config = { ...existing, ...(data as any).config };
+          } catch {
+            (patch as any).config = (data as any).config;
+          }
+        }
         updateNode(id, patch);
+      },
+      addEdge: (fromId: string, toId: string, kind: 'control'|'data'|'error' = 'control') => {
+        const fromNode = workflow.nodes.find((n) => n.id === fromId);
+        const toNode = workflow.nodes.find((n) => n.id === toId);
+        if (!fromNode || !toNode) return;
+        const findPort = (list: Port[], dir: 'in'|'out') => list.find((p) => p.direction === dir)?.id;
+        const fromPort = findPort(fromNode.ports || [], 'out') || (fromNode.ports[0]?.id as string);
+        const toPort = findPort(toNode.ports || [], 'in') || (toNode.ports[0]?.id as string);
+        if (fromPort && toPort) {
+          storeAddEdge({ from: { nodeId: fromNode.id, portId: fromPort }, to: { nodeId: toNode.id, portId: toPort }, kind });
+        }
       }
           });
         }}

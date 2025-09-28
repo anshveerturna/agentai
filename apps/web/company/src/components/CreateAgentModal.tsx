@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { X, ChevronRight, Sparkles, Plus } from 'lucide-react';
 import { templates as sharedTemplates, AgentTemplate as SharedAgentTemplate } from '@/data/templates';
+import { getSupabaseClient } from '@/lib/supabase.client';
 
 // Use the same-origin proxy so Authorization can be attached from HttpOnly cookies
 const API_PROXY = '/api/company';
@@ -50,9 +51,18 @@ export default function CreateAgentModal({ open, onOpenChange, prefillTemplate }
 
   const mutation = useMutation({
     mutationFn: async () => {
+      // Attach Authorization header proactively using Supabase token
+      let authHeader: Record<string, string> = {}
+      try {
+        const supabase = getSupabaseClient()
+        const { data: { session } } = await supabase.auth.getSession()
+        const token = session?.access_token
+        if (token) authHeader = { Authorization: `Bearer ${token}` }
+      } catch {}
+
       const res = await fetch(`${API_PROXY}/agents`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeader },
         body: JSON.stringify({
           name,
           description,

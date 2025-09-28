@@ -1,0 +1,34 @@
+2025-09-21T11:53:41.519525Z  WARN turborepo_lib::package_changes_watcher: changed_files: {AnchoredSystemPathBuf(".turbo/cookies")}
+2025-09-21T11:53:41.520594Z  WARN turborepo_lib::package_changes_watcher: changed_packages: Ok(Some({WorkspacePackage { name: Root, path: AnchoredSystemPathBuf("") }}))
+2025-09-21T11:53:41.607079Z  WARN turborepo_lib::package_changes_watcher: changed_files: {AnchoredSystemPathBuf(".turbo/daemon/527c0c944d2bcf45-turbo.log.2025-09-20"), AnchoredSystemPathBuf(".turbo/daemon/527c0c944d2bcf45-turbo.log.2025-09-21")}
+2025-09-21T11:53:41.607099Z  WARN turborepo_lib::package_changes_watcher: changed_packages: Ok(Some({WorkspacePackage { name: Root, path: AnchoredSystemPathBuf("") }}))
+2025-09-21T11:53:41.706889Z  WARN turborepo_lib::package_changes_watcher: changed_files: {AnchoredSystemPathBuf(".turbo/daemon/527c0c944d2bcf45-turbo.log.2025-09-21")}
+2025-09-21T11:53:41.706904Z  WARN turborepo_lib::package_changes_watcher: changed_packages: Ok(Some({WorkspacePackage { name: Root, path: AnchoredSystemPathBuf("") }}))
+2025-09-21T11:54:07.906322Z  WARN turborepo_lib::package_changes_watcher: changed_files: {AnchoredSystemPathBuf(".turbo/cookies/5.cookie"), AnchoredSystemPathBuf(".turbo/cookies/7.cookie"), AnchoredSystemPathBuf(".turbo/cookies/1.cookie"), AnchoredSystemPathBuf(".turbo/cookies/2.cookie"), AnchoredSystemPathBuf(".turbo/cookies/8.cookie"), AnchoredSystemPathBuf(".turbo/cookies/6.cookie"), AnchoredSystemPathBuf(".turbo/cookies/4.cookie"), AnchoredSystemPathBuf(".turbo/cookies/3.cookie")}
+2025-09-21T11:54:07.906338Z  WARN turborepo_lib::package_changes_watcher: changed_packages: Ok(Some({WorkspacePackage { name: Root, path: AnchoredSystemPathBuf("") }}))
+2025-09-21T11:54:08.504138Z  WARN turborepo_lib::package_changes_watcher: changed_files: {AnchoredSystemPathBuf(".turbo/cookies/9.cookie"), AnchoredSystemPathBuf(".turbo/cookies/10.cookie")}
+2025-09-21T11:54:08.504158Z  WARN turborepo_lib::package_changes_watcher: changed_packages: Ok(Some({WorkspacePackage { name: Root, path: AnchoredSystemPathBuf("") }}))
+2025-09-21T12:03:15.183295Z  WARN turborepo_lib::package_changes_watcher: changed_files: {AnchoredSystemPathBuf(".turbo"), AnchoredSystemPathBuf("apps/web/company/src/components/workflows")}
+2025-09-21T12:03:15.183320Z  WARN turborepo_lib::package_changes_watcher: changed_packages: Ok(Some({WorkspacePackage { name: Other("company"), path: AnchoredSystemPathBuf("apps/web/company") }, WorkspacePackage { name: Root, path: AnchoredSystemPathBuf("") }}))
+2025-09-21T12:03:15.196702Z  WARN turborepo_lib::package_changes_watcher: hashes are the same, no need to rerun
+2025-09-21T12:06:10.976728Z  WARN turborepo_lib::package_changes_watcher: changed_files: {AnchoredSystemPathBuf("apps/web/company/src")}
+2025-09-21T12:06:10.976742Z  WARN turborepo_lib::package_changes_watcher: changed_packages: Ok(Some({WorkspacePackage { name: Other("company"), path: AnchoredSystemPathBuf("apps/web/company") }}))
+2025-09-21T12:06:10.976815Z  WARN turborepo_lib::package_changes_watcher: hashes are the same, no need to rerun
+2025-09-21T12:06:18.875679Z  WARN turborepo_lib::package_changes_watcher: changed_files: {AnchoredSystemPathBuf("apps/api/company/dist2/workflows/workflows.module.d.ts")}
+2025-09-21T12:06:18.875692Z  WARN turborepo_lib::package_changes_watcher: changed_packages: Ok(Some({WorkspacePackage { name: Other("company-api"), path: AnchoredSystemPathBuf("apps/api/company") }}))
+2025-09-21T12:06:18.875730Z  WARN turborepo_lib::package_changes_watcher: hashes are the same, no need to rerun
+2025-09-21T12:06:19.475777Z  WARN turborepo_lib::package_changes_watcher: changed_files: {AnchoredSystemPathBuf("apps/api/company/dist2/workflows")}
+2025-09-21T12:06:19.475793Z  WARN turborepo_lib::package_changes_watcher: changed_packages: Ok(Some({WorkspacePackage { name: Other("company-api"), path: AnchoredSystemPathBuf("apps/api/company") }}))
+2025-09-21T12:06:19.475824Z  WARN turborepo_lib::package_changes_watcher: hashes are the same, no need to rerun
+2025-09-21T12:06:19.674499Z  WARN turborepo_lib::package_changes_watcher: changed_files: {AnchoredSystemPathBuf("apps/api/company/dist2/workflows/workflows.service.js")}
+2025-09-21T12:06:19.674524Z  WARN turborepo_lib::package_changes_watcher: changed_packages: Ok(Some({WorkspacePackage { name: Other("company-api"), path: AnchoredSystemPathBuf("apps/api/company") }}))
+2025-09-21T12:06:19.705701Z  WARN turborepo_lib::package_changes_watcher: hashes are the same, no need to rerun
+2025-09-21T12:06:20.475590Z  WARN turborepo_lib::package_changes_watcher: changed_files: {AnchoredSystemPathBuf("apps/api/company/dist2"), AnchoredSystemPathBuf("apps/api/company/dist2/workflows/workflows.service.d.ts")}
+2025-09-21T12:06:20.475606Z  WARN turborepo_lib::package_changes_watcher: changed_packages: Ok(Some({WorkspacePackage { name: Other("company-api"), path: AnchoredSystemPathBuf("apps/api/company") }}))
+2025-09-21T12:06:20.475640Z  WARN turborepo_lib::package_changes_watcher: hashes are the same, no need to rerun
+2025-09-21T12:06:20.574581Z  WARN turborepo_lib::package_changes_watcher: changed_files: {AnchoredSystemPathBuf("apps/api/company/dist2/workflows/workflows.module.js"), AnchoredSystemPathBuf("apps/api/company/dist2/workflows/workflows.controller.d.ts")}
+2025-09-21T12:06:20.574595Z  WARN turborepo_lib::package_changes_watcher: changed_packages: Ok(Some({WorkspacePackage { name: Other("company-api"), path: AnchoredSystemPathBuf("apps/api/company") }}))
+2025-09-21T12:06:20.578471Z  WARN turborepo_lib::package_changes_watcher: hashes are the same, no need to rerun
+2025-09-21T12:06:21.075045Z  WARN turborepo_lib::package_changes_watcher: changed_files: {AnchoredSystemPathBuf("apps/api/company/dist2/workflows/workflows.controller.js")}
+2025-09-21T12:06:21.075066Z  WARN turborepo_lib::package_changes_watcher: changed_packages: Ok(Some({WorkspacePackage { name: Other("company-api"), path: AnchoredSystemPathBuf("apps/api/company") }}))
+2025-09-21T12:06:21.104602Z  WARN turborepo_lib::package_changes_watcher: hashes are the same, no need to rerun

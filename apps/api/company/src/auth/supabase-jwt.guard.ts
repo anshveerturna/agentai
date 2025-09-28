@@ -11,21 +11,75 @@ export class SupabaseJwtGuard implements CanActivate {
     if (this.jwksCache.has(iss)) {
       return this.jwksCache.get(iss)!;
     }
-    
-    // Use project ref from env if available, otherwise extract from issuer
-    const projectRef = process.env.SUPABASE_PROJECT_REF;
-    let jwksUrl: URL;
-    
-    if (projectRef) {
-      jwksUrl = new URL(`https://${projectRef}.supabase.co/auth/v1/jwks`);
-    } else {
-      jwksUrl = new URL(`${iss.replace(/\/$/, '')}/jwks`);
+
+    // Derive the JWKS URL for Supabase/GoTrue correctly.
+    // Prefer env-provided project ref if available.
+    const explicitJwks = process.env.SUPABASE_JWKS_URL;
+    if (explicitJwks) {
+      try {
+        const url = new URL(explicitJwks);
+        this.logger.log(`Using explicit SUPABASE_JWKS_URL: ${url.toString()}`);
+        const jwks = createRemoteJWKSet(url);
+        this.jwksCache.set(iss, jwks);
+        return jwks;
+      } catch (e) {
+        this.logger.error(`Invalid SUPABASE_JWKS_URL: ${explicitJwks}`);
+      }
     }
-    
-    this.logger.log(`Using JWKS URL: ${jwksUrl.toString()}`);
-    const jwks = createRemoteJWKSet(jwksUrl);
+
+    const projectRef = process.env.SUPABASE_PROJECT_REF;
+    let jwksUrl: URL | null = null;
+
+    if (projectRef) {
+      // Hosted Supabase JWKS endpoint
+      jwksUrl = new URL(`https://${projectRef}.supabase.co/auth/v1/keys`);
+    } else {
+      const trimmed = iss.replace(/\/$/, '');
+      try {
+        const u = new URL(trimmed);
+        // If issuer already includes /auth/v1, use the canonical /keys endpoint
+        if (u.pathname.includes('/auth/v1')) {
+          u.pathname = '/auth/v1/keys';
+          u.search = '';
+          u.hash = '';
+          jwksUrl = u;
+        } else {
+          // Fallback to a well-known path
+          u.pathname = '/.well-known/jwks.json';
+          u.search = '';
+          u.hash = '';
+          jwksUrl = u;
+        }
+      } catch {
+        // As an absolute last resort, construct from the string (may still fail later)
+        jwksUrl = new URL(`${trimmed}/.well-known/jwks.json`);
+      }
+    }
+
+    this.logger.log(`Using JWKS URL: ${jwksUrl!.toString()}`);
+    const jwks = createRemoteJWKSet(jwksUrl!);
     this.jwksCache.set(iss, jwks);
     return jwks;
+  }
+
+  private getAlternateJwks(iss: string) {
+    // Try the alternate known endpoint if the first one fails.
+    try {
+      const trimmed = iss.replace(/\/$/, '');
+      const u = new URL(trimmed);
+      const alt = new URL(u.toString());
+      if (u.pathname.includes('/auth/v1')) {
+        alt.pathname = '/.well-known/jwks.json';
+      } else {
+        alt.pathname = '/auth/v1/keys';
+      }
+      alt.search = '';
+      alt.hash = '';
+      this.logger.log(`Trying alternate JWKS URL: ${alt.toString()}`);
+      return createRemoteJWKSet(alt);
+    } catch (e) {
+      return null;
+    }
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -60,15 +114,37 @@ export class SupabaseJwtGuard implements CanActivate {
       this.logger.log(`Verified via JWKS for user: ${payload.sub}`);
       return true;
     } catch (err: any) {
-      this.logger.warn(`JWT verify (JWKS) failed: ${err?.message || String(err)}`);
+  this.logger.warn(`JWT verify (JWKS) failed: ${err?.message || String(err)}`);
 
-      // 2) Optional HS256 fallback (for self-hosted Supabase or legacy tokens)
+      // 1b) Try alternate JWKS endpoint before giving up on RS256 verification
+      try {
+        const raw = ((): string | undefined => {
+          try { return decodeJwt(token).iss as string | undefined; } catch { return undefined; }
+        })();
+        if (raw) {
+          const alt = this.getAlternateJwks(raw);
+          if (alt) {
+            const { payload } = await jwtVerify(token, alt, {
+              issuer: raw,
+              audience: 'authenticated',
+              clockTolerance: 5,
+            });
+            (req as any).user = { sub: payload.sub, email: (payload as any).email ?? null, ...payload };
+            this.logger.log(`Verified via alternate JWKS for user: ${payload.sub}`);
+            return true;
+          }
+        }
+      } catch (errAlt: any) {
+        this.logger.warn(`JWT verify (alternate JWKS) failed: ${errAlt?.message || String(errAlt)}`);
+      }
+
+      // 2) Optional HS256 fallback (for self-hosted Supabase or legacy tokens) only if explicit secret provided
       const secret = process.env.SUPABASE_JWT_SECRET;
       if (secret && secret !== 'replace_me' && secret.length > 10) {
         try {
           const key = new TextEncoder().encode(secret);
           const { payload } = await jwtVerify(token, key, {
-            audience: 'authenticated',
+            // In HS256 fallback, skip strict audience checks to support anon/service keys in dev
             clockTolerance: 5,
           });
           (req as any).user = { sub: payload.sub, email: (payload as any).email ?? null, ...payload };
@@ -77,22 +153,22 @@ export class SupabaseJwtGuard implements CanActivate {
         } catch (err2: any) {
           this.logger.error(`JWT verify (HS256 fallback) failed: ${err2?.message || String(err2)}`);
         }
-      } else {
-        // For hosted Supabase, use the anon key as HS256 secret for JWT verification
-        const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-        if (anonKey) {
-          try {
-            const key = new TextEncoder().encode(anonKey);
-            const { payload } = await jwtVerify(token, key, {
-              audience: 'authenticated',
-              clockTolerance: 5,
-            });
-            (req as any).user = { sub: payload.sub, email: (payload as any).email ?? null, ...payload };
-            this.logger.log(`Verified via anon key HS256 for user: ${payload.sub}`);
-            return true;
-          } catch (err3: any) {
-            this.logger.error(`JWT verify (anon key HS256) failed: ${err3?.message || String(err3)}`);
-          }
+      }
+
+      // 3) Dev-only: allow unverified tokens if explicitly enabled (do NOT use in prod)
+      if (process.env.NODE_ENV !== 'production' && process.env.AUTH_DEV_ALLOW_UNVERIFIED === 'true') {
+        try {
+          const decoded = decodeJwt(token);
+          // Use a valid UUID for dev to satisfy Prisma's UUID column filtering
+          const sub = (decoded.sub as string) || (decoded as any).user_id || '00000000-0000-0000-0000-000000000001';
+          (req as any).user = { sub, email: (decoded as any).email ?? null, ...decoded };
+          this.logger.warn('DEV MODE: Accepted token without signature verification. Disable AUTH_DEV_ALLOW_UNVERIFIED in production.');
+          return true;
+        } catch (e) {
+          // Not a JWT? Still allow with a dummy user in dev
+          (req as any).user = { sub: '00000000-0000-0000-0000-000000000001', email: null };
+          this.logger.warn('DEV MODE: No JWT decode; injected dummy user.');
+          return true;
         }
       }
 

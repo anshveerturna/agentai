@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Body, UseGuards, Req } from '@nestjs/common'
 import { AgentsService } from './agents.service'
-import { SupabaseJwtGuard, AuthenticatedRequest } from '../auth/../auth/supabase-jwt.guard'
+import { SupabaseJwtGuard, AuthenticatedRequest } from '../auth/supabase-jwt.guard'
 
 @Controller('agents')
 @UseGuards(SupabaseJwtGuard)

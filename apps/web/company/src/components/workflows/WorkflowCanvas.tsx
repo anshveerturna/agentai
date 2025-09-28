@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { WorkflowToolbar } from './WorkflowToolbar';
 import ReactFlowCanvas, { type AddNodeFn } from './flow/ReactFlowCanvas';
 import { WorkflowCodeEditor } from './WorkflowCodeEditor';
@@ -7,6 +7,10 @@ import { PropertiesPanel } from './PropertiesPanel';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Eye, Code2, Play, Save } from 'lucide-react';
 import type { Node } from '@xyflow/react';
+import { useParams } from 'next/navigation';
+import { useWorkflowStore } from '@/store/workflowStore';
+import { createVersion, listVersions, restoreVersion, updateWorkflow, type WorkflowVersion } from '@/lib/workflows.client';
+import { toExecutionSpec } from '@/lib/workflow.serialization';
 
 interface WorkflowCanvasProps {
   onBack: () => void;
@@ -17,12 +21,83 @@ interface WorkflowCanvasProps {
 export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: WorkflowCanvasProps) {
   const [selectedTool, setSelectedTool] = useState('cursor');
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+  const [pendingConnectorFrom, setPendingConnectorFrom] = useState<string | null>(null);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [showPropertiesPanel, setShowPropertiesPanel] = useState(false);
   const [addNodeApi, setAddNodeApi] = useState<AddNodeFn | null>(null);
   const [flowApi, setFlowApi] = useState<{
-    zoomIn: () => void; zoomOut: () => void; fitView: () => void; toggleMinimap: () => void; toggleGrid: () => void; updateNodeData: (id: string, data: Record<string, any>) => void;
+    zoomIn: () => void; zoomOut: () => void; fitView: () => void; toggleMinimap: () => void; toggleGrid: () => void; updateNodeData: (id: string, data: Record<string, any>) => void; addEdge?: (fromId: string, toId: string, kind?: 'control'|'data'|'error') => void;
   } | null>(null);
+  const params = useParams();
+  const workflowId = (params?.id as string) ?? undefined;
+
+  // Local autosave/versions state
+  const [isSaving, setIsSaving] = useState(false);
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
+  const [versionsOpen, setVersionsOpen] = useState(false);
+  const [versions, setVersions] = useState<WorkflowVersion[] | null>(null);
+
+  // Observe store workflow for dirty tracking
+  const workflowSnapshot = useWorkflowStore((s) => s.workflow);
+  const workflowHash = useMemo(() => JSON.stringify({ nodes: workflowSnapshot.nodes, edges: workflowSnapshot.edges, meta: { name: workflowSnapshot.name } }), [workflowSnapshot.nodes, workflowSnapshot.edges, workflowSnapshot.name]);
+
+  useEffect(() => {
+    if (!workflowId) return;
+    // Debounced autosave every 30s when changes detected
+    const interval = setInterval(async () => {
+      try {
+        setIsSaving(true);
+        // 1) push current execution spec to backend
+        const spec = toExecutionSpec(workflowSnapshot as any);
+        await updateWorkflow(workflowId, { graph: spec });
+        // 2) create a new version
+        await createVersion(workflowId, 'Auto-save');
+        setLastSavedAt(Date.now());
+      } catch (e) {
+        console.warn('Autosave failed', e);
+      } finally {
+        setIsSaving(false);
+      }
+    }, 30_000);
+    return () => clearInterval(interval);
+  }, [workflowId, workflowHash, workflowSnapshot.nodes, workflowSnapshot.edges]);
+
+  async function manualSave() {
+    if (!workflowId) return;
+    try {
+      setIsSaving(true);
+      const spec = toExecutionSpec(workflowSnapshot as any);
+      await updateWorkflow(workflowId, { graph: spec });
+      await createVersion(workflowId, 'Manual save');
+      setLastSavedAt(Date.now());
+    } catch (e) {
+      console.warn('Save failed', e);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function openVersions() {
+    if (!workflowId) return;
+    try {
+      const list = await listVersions(workflowId);
+      setVersions(list);
+      setVersionsOpen(true);
+    } catch (e) {
+      console.warn('Failed to load versions', e);
+    }
+  }
+
+  async function handleRestore(versionId: string) {
+    if (!workflowId) return;
+    try {
+      await restoreVersion(workflowId, versionId);
+      // Optionally refresh local state – for now reload the page to pick up server state
+      window.location.reload();
+    } catch (e) {
+      console.warn('Restore failed', e);
+    }
+  }
 
   // Handle ESC key to dismiss panels
   useEffect(() => {
@@ -38,9 +113,9 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Show properties panel when node is selected
+  // Show properties panel when node is selected via selection change (keyboard/marquee)
   useEffect(() => {
-  setShowPropertiesPanel(!!selectedNode);
+    setShowPropertiesPanel(!!selectedNode);
   }, [selectedNode]);
 
   const handleAddNode = () => {
@@ -82,6 +157,9 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
         </div>
 
         <div className="flex items-center gap-2">
+          <div className="text-xs text-muted-foreground pr-2">
+            {isSaving ? 'Saving…' : lastSavedAt ? `Saved ${new Date(lastSavedAt).toLocaleTimeString()}` : 'Not saved yet'}
+          </div>
           <Button
             variant={isCodeView ? "default" : "outline"}
             size="sm"
@@ -90,9 +168,12 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
             {isCodeView ? <Eye className="w-4 h-4 mr-2" /> : <Code2 className="w-4 h-4 mr-2" />}
             {isCodeView ? "Visual" : "Code"}
           </Button>
-          <Button variant="outline" size="sm">
+          <Button variant="outline" size="sm" onClick={() => manualSave()}>
             <Save className="w-4 h-4 mr-2" />
             Save
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => openVersions()}>
+            History
           </Button>
           <Button size="sm">
             <Play className="w-4 h-4 mr-2" />
@@ -106,10 +187,42 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
         <ReactFlowCanvas 
           mode={selectedTool === 'hand' ? 'pan' : 'select'}
           onNodeSelect={setSelectedNode}
+          onNodeClick={(node) => {
+            if (selectedTool === 'connector') {
+              if (!pendingConnectorFrom) {
+                setPendingConnectorFrom(node.id);
+              } else {
+                if (flowApi?.addEdge) flowApi.addEdge(pendingConnectorFrom, node.id, 'control');
+                setPendingConnectorFrom(null);
+              }
+              return; // do not toggle properties during connector mode
+            }
+            // Toggle: clicking the same node closes the panel; clicking any node opens
+            if (selectedNode && node.id === selectedNode.id && showPropertiesPanel) {
+              setShowPropertiesPanel(false);
+              setSelectedNode(null);
+            } else {
+              setSelectedNode(node);
+              setShowPropertiesPanel(true);
+            }
+          }}
+          onPaneClick={(pos) => {
+            // In text mode, click to add a text node at cursor
+            if (selectedTool === 'text' && addNodeApi) {
+              const id = addNodeApi('text', { position: pos as any, data: { label: 'Text' } as any });
+              setSelectedTool('cursor');
+              setSelectedNode({ id, position: pos as any } as any);
+              setShowPropertiesPanel(true);
+            }
+            if (selectedTool === 'connector' && pendingConnectorFrom) {
+              // cancel dangling connector on pane click
+              setPendingConnectorFrom(null);
+            }
+          }}
           onAddNodeRequest={handleAddNode}
-          onReady={({ addNode, zoomIn, zoomOut, fitView, toggleMinimap, toggleGrid, updateNodeData }) => {
+          onReady={({ addNode, zoomIn, zoomOut, fitView, toggleMinimap, toggleGrid, updateNodeData, addEdge }) => {
             setAddNodeApi(() => addNode);
-            setFlowApi({ zoomIn, zoomOut, fitView, toggleMinimap, toggleGrid, updateNodeData });
+            setFlowApi({ zoomIn, zoomOut, fitView, toggleMinimap, toggleGrid, updateNodeData, addEdge });
           }}
         />
         
@@ -186,6 +299,30 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
           </Button>
         </div>
       </div>
+      {versionsOpen && (
+        <div className="absolute right-4 top-16 z-50 w-96 max-h-[60vh] overflow-auto rounded-lg border border-border bg-card shadow-xl">
+          <div className="flex items-center justify-between px-4 py-2 border-b border-border/50">
+            <div className="font-semibold">Versions</div>
+            <button className="text-sm text-muted-foreground" onClick={() => setVersionsOpen(false)}>Close</button>
+          </div>
+          <div className="divide-y divide-border/50">
+            {(versions ?? []).map(v => (
+              <div key={v.id} className="px-4 py-3 flex items-center justify-between">
+                <div className="text-sm">
+                  <div className="font-medium">{v.label || `Version ${v.id.slice(0, 6)}`}</div>
+                  <div className="text-xs text-muted-foreground">{v.createdAt ? new Date(v.createdAt).toLocaleString() : ''}</div>
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" onClick={() => handleRestore(v.id)}>Restore</Button>
+                </div>
+              </div>
+            ))}
+            {(!versions || versions.length === 0) && (
+              <div className="px-4 py-6 text-sm text-muted-foreground">No versions yet.</div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

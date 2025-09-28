@@ -1,3 +1,4 @@
+// (intentionally left blank header — original workflow type definitions start below)
 export type UUID = string;
 
 export type Point = { x: number; y: number };

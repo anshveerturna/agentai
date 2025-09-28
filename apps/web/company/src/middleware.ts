@@ -41,7 +41,14 @@ export async function middleware(req: NextRequest) {
       ? authHeader.slice(7)
       : req.cookies.get('sb-access-token')?.value || req.cookies.get('sb:token')?.value
 
-  if (!token) return redirectToLogin(req)
+    // In development, allow through and let the client AuthGate handle redirect to avoid edge-cookie flakiness.
+    if (!token && process.env.NODE_ENV !== 'production') {
+      const res = NextResponse.next()
+      res.headers.set('x-auth-middleware', 'allow-dev')
+      return res
+    }
+
+    if (!token) return redirectToLogin(req)
 
     // Lightweight verification: decode payload (no signature validation at edge here) to check expiry.
     const [, payloadB64] = token.split('.')
@@ -54,9 +61,9 @@ export async function middleware(req: NextRequest) {
     } catch {
       return redirectToLogin(req)
     }
-  const res = NextResponse.next()
-  res.headers.set('x-auth-middleware', 'allow')
-  return res
+    const res = NextResponse.next()
+    res.headers.set('x-auth-middleware', 'allow')
+    return res
   } catch {
     return redirectToLogin(req)
   }

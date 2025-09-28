@@ -1,7 +1,10 @@
+// Load environment variables before anything else
+import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import helmet from 'helmet';
 import * as express from 'express';
+import * as cookieParser from 'cookie-parser';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -57,6 +60,9 @@ async function bootstrap() {
 
   // Remove Express X-Powered-By if still present
   app.getHttpAdapter().getInstance().disable('x-powered-by');
+
+  // Enable cookie parsing so guards/middleware can access cookies
+  app.use(cookieParser());
 
   await app.listen(process.env.PORT ?? 3002);
 }

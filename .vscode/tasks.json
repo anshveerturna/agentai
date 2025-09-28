@@ -1,0 +1,68 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Web - typecheck",
+			"type": "shell",
+			"command": "npm run -w apps/web/company build",
+			"problemMatcher": [
+				"$tsc"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Web - build",
+			"type": "shell",
+			"command": "npm run -w apps/web/company build",
+			"problemMatcher": [
+				"$tsc"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Web - build (retry)",
+			"type": "shell",
+			"command": "npm run -w apps/web/company build",
+			"problemMatcher": [
+				"$tsc"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Web - build (retry 2)",
+			"type": "shell",
+			"command": "npm run -w apps/web/company build",
+			"problemMatcher": [
+				"$tsc"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Web - build (ignore ESLint)",
+			"type": "shell",
+			"command": "npm run -w apps/web/company build",
+			"problemMatcher": [
+				"$tsc"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Web - build (after route param fix)",
+			"type": "shell",
+			"command": "npm run -w apps/web/company build",
+			"problemMatcher": [
+				"$tsc"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Web - build (after any ctx)",
+			"type": "shell",
+			"command": "npm run -w apps/web/company build",
+			"problemMatcher": [
+				"$tsc"
+			],
+			"group": "build"
+		}
+	]
+}

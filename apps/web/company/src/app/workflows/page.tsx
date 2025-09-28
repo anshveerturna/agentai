@@ -6,6 +6,8 @@ import { WorkflowCanvas } from '@/components/workflows/WorkflowCanvas';
 import { WorkflowList } from '@/components/workflows/WorkflowList';
 import { WorkflowTemplates } from '@/components/workflows/WorkflowTemplates';
 import { Button } from '@/components/ui/button';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { createWorkflow } from '@/lib/workflows.client';
 import { Input } from '@/components/ui/input';
 import { Plus, Search, Filter, Grid3X3, List, Code, Eye } from 'lucide-react';
 
@@ -14,9 +16,23 @@ export default function WorkflowsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [isCodeView, setIsCodeView] = useState(false);
+  const queryClient = useQueryClient();
+
+  const createWf = useMutation({
+    mutationFn: async () => {
+      // Create a blank workflow then open editor
+      const wf = await createWorkflow({ name: 'Untitled Workflow', description: '' });
+      return wf;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workflows'] });
+      setView('editor');
+    }
+  });
 
   const handleCreateWorkflow = () => {
-    setView('editor');
+    // Kick off backend creation; when done, open editor. Keeps UI consistent while ensuring persistence.
+    createWf.mutate();
   };
 
   const handleBackToDashboard = () => {
@@ -56,7 +72,7 @@ export default function WorkflowsPage() {
                 className="bg-gradient-to-r from-primary to-primary/90 hover:from-primary/90 hover:to-primary text-primary-foreground shadow-lg hover:shadow-xl transition-all duration-200"
               >
                 <Plus className="w-5 h-5 mr-2" />
-                Create Workflow
+                {createWf.isPending ? 'Creating…' : 'Create Workflow'}
               </Button>
             </div>
           </div>
