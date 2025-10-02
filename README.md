@@ -37,3 +37,12 @@ Key security measures have been implemented across the stack:
 - Playwright E2E suite (auth & security regression coverage)
 
 See `SECURITY.md` for full details, file references, and recommended next steps.
+
+## Workflow Builder
+
+The project previously had two builder implementations:
+
+- Legacy: `apps/web/company/src/components/flows/**` (custom canvas)
+- Current: `apps/web/company/src/components/workflows/**` (XYFlow-based)
+
+The legacy `components/flows` implementation has been removed to reduce clutter and avoid confusion. All flow/editor work should happen under `components/workflows`. App routes under `/flows` now redirect to `/workflows`.

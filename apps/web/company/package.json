@@ -50,6 +50,8 @@
     "node-fetch": "3",
     "tailwindcss": "^4.1.11",
     "tw-animate-css": "^1.3.6",
-    "typescript": "^5"
+    "typescript": "^5",
+    "@types/react-window": "^1.8.8",
+    "@types/validator": "^13.11.10"
   }
 }

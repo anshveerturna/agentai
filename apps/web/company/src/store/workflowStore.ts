@@ -36,6 +36,8 @@ type Actions = {
   undo: () => void;
   redo: () => void;
   pushHistory: (desc?: string) => void;
+  // replace workflow (hydrate)
+  setWorkflow: (wf: Workflow) => void;
   // viewport
   setViewport: (vp: Partial<Viewport>) => void;
   zoomBy: (delta: number, center?: { x: number; y: number }) => void;
@@ -183,8 +185,9 @@ const creator: StateCreator<
     clearSelection: () =>
       set(
         produce<WorkflowStore>((draft: WorkflowStore) => {
-          draft.selection.nodes.clear();
-          draft.selection.edges.clear();
+          // replace with new Sets so subscribers re-render
+          draft.selection.nodes = new Set();
+          draft.selection.edges = new Set();
           draft.workflow.nodes.forEach((n: NodeModel) => (n.selected = false));
         })
       ),
@@ -193,11 +196,14 @@ const creator: StateCreator<
       set(
         produce<WorkflowStore>((draft: WorkflowStore) => {
           if (!additive) {
-            draft.selection.nodes.clear();
+            draft.selection.nodes = new Set();
             draft.workflow.nodes.forEach((n: NodeModel) => (n.selected = false));
           }
+          // Always create a new Set to update reference
+          const next = new Set(draft.selection.nodes);
+          ids.forEach((id) => next.add(id));
+          draft.selection.nodes = next;
           ids.forEach((id) => {
-            draft.selection.nodes.add(id);
             const node = draft.workflow.nodes.find((n) => n.id === id);
             if (node) node.selected = true;
           });
@@ -207,8 +213,13 @@ const creator: StateCreator<
     selectEdges: (ids: UUID[], additive?: boolean) =>
       set(
         produce<WorkflowStore>((draft: WorkflowStore) => {
-          if (!additive) draft.selection.edges.clear();
-          ids.forEach((id) => draft.selection.edges.add(id));
+          if (!additive) {
+            draft.selection.edges = new Set(ids);
+          } else {
+            const next = new Set(draft.selection.edges);
+            ids.forEach((id) => next.add(id));
+            draft.selection.edges = next;
+          }
         })
       ),
 
@@ -301,13 +312,23 @@ const creator: StateCreator<
           draft.connectionDraft.cursor = cursor;
         })
       ),
+    setWorkflow: (wf: Workflow) =>
+      set(
+        produce<WorkflowStore>((draft: WorkflowStore) => {
+          draft.workflow = wf;
+          draft.selection.nodes.clear();
+          draft.selection.edges.clear();
+          draft.history = [];
+          draft.redoStack = [];
+          // keep current viewport as-is
+        })
+      ),
 
   completeConnect: (to) =>
       set(
         produce<WorkflowStore>((draft: WorkflowStore) => {
           const d = draft.connectionDraft;
           if (!d || !d.from) return;
-          // Only allow from output to input and same kind
           if (d.from.kind !== to.kind) {
             draft.connectionDraft = undefined;
             return;

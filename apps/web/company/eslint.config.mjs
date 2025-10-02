@@ -11,6 +11,28 @@ const compat = new FlatCompat({
 
 const eslintConfig = [
   ...compat.extends("next/core-web-vitals", "next/typescript"),
+  {
+    rules: {
+      // Prevent re-introducing legacy flows imports
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '@/components/flows',
+              message: 'Use components/workflows instead (legacy flows removed).',
+            },
+          ],
+          patterns: [
+            {
+              group: ['@/components/flows/*', './src/components/flows/*', '../components/flows/*'],
+              message: 'Use components/workflows instead (legacy flows removed).',
+            },
+          ],
+        },
+      ],
+    },
+  },
 ];
 
 export default eslintConfig;

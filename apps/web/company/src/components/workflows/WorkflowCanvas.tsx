@@ -10,7 +10,8 @@ import type { Node } from '@xyflow/react';
 import { useParams } from 'next/navigation';
 import { useWorkflowStore } from '@/store/workflowStore';
 import { createVersion, listVersions, restoreVersion, updateWorkflow, type WorkflowVersion } from '@/lib/workflows.client';
-import { toExecutionSpec } from '@/lib/workflow.serialization';
+import { toExecutionSpec, fromExecutionSpec, validateExecutionSpec } from '@/lib/workflow.serialization';
+import { getWorkflow } from '@/lib/workflows.client';
 
 interface WorkflowCanvasProps {
   onBack: () => void;
@@ -39,19 +40,34 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
 
   // Observe store workflow for dirty tracking
   const workflowSnapshot = useWorkflowStore((s) => s.workflow);
+  const setWorkflow = useWorkflowStore((s) => (s as any).setWorkflow as (wf: any) => void);
   const workflowHash = useMemo(() => JSON.stringify({ nodes: workflowSnapshot.nodes, edges: workflowSnapshot.edges, meta: { name: workflowSnapshot.name } }), [workflowSnapshot.nodes, workflowSnapshot.edges, workflowSnapshot.name]);
 
   useEffect(() => {
     if (!workflowId) return;
+    // Initial hydration from backend
+    (async () => {
+      try {
+        const wf = await getWorkflow(workflowId);
+        const spec = (wf?.graph as any) ?? null;
+        if (spec && typeof spec === 'object' && spec.nodes && spec.flow) {
+          const hydrated = fromExecutionSpec(spec as any);
+          setWorkflow(hydrated as any);
+        }
+      } catch (e) {
+        console.warn('Initial hydration failed', e);
+      }
+    })();
     // Debounced autosave every 30s when changes detected
     const interval = setInterval(async () => {
       try {
         setIsSaving(true);
-        // 1) push current execution spec to backend
+        // 1) push current execution spec to backend (validate before versioning)
         const spec = toExecutionSpec(workflowSnapshot as any);
         await updateWorkflow(workflowId, { graph: spec });
-        // 2) create a new version
-        await createVersion(workflowId, 'Auto-save');
+        const valid = validateExecutionSpec(spec);
+        // 2) create a new version if valid
+        if (valid.ok) await createVersion(workflowId, 'Auto-save');
         setLastSavedAt(Date.now());
       } catch (e) {
         console.warn('Autosave failed', e);
@@ -68,7 +84,12 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
       setIsSaving(true);
       const spec = toExecutionSpec(workflowSnapshot as any);
       await updateWorkflow(workflowId, { graph: spec });
-      await createVersion(workflowId, 'Manual save');
+      const valid = validateExecutionSpec(spec);
+      if (valid.ok) {
+        await createVersion(workflowId, 'Manual save');
+      } else {
+        console.warn('Validation failed, version not created', valid.errors);
+      }
       setLastSavedAt(Date.now());
     } catch (e) {
       console.warn('Save failed', e);
@@ -92,8 +113,13 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
     if (!workflowId) return;
     try {
       await restoreVersion(workflowId, versionId);
-      // Optionally refresh local state – for now reload the page to pick up server state
-      window.location.reload();
+      // Re-fetch workflow and hydrate without full reload
+      const wf = await getWorkflow(workflowId);
+      const spec = (wf?.graph as any) ?? null;
+      if (spec && typeof spec === 'object' && spec.nodes && spec.flow) {
+        const hydrated = fromExecutionSpec(spec as any);
+        setWorkflow(hydrated as any);
+      }
     } catch (e) {
       console.warn('Restore failed', e);
     }
@@ -104,8 +130,25 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setShowCommandPalette(false);
-  setSelectedNode(null);
+        setSelectedNode(null);
         setShowPropertiesPanel(false);
+        setSelectedTool('cursor');
+        setPendingConnectorFrom(null);
+      }
+      // Toggle connector tool with C
+      if (!e.metaKey && !e.ctrlKey && e.key.toLowerCase() === 'c') {
+        e.preventDefault();
+        setSelectedTool((t) => (t === 'connector' ? 'cursor' : 'connector'));
+      }
+      // Text tool with T
+      if (!e.metaKey && !e.ctrlKey && e.key.toLowerCase() === 't') {
+        e.preventDefault();
+        setSelectedTool('text');
+      }
+      // Split tool with D
+      if (!e.metaKey && !e.ctrlKey && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        setSelectedTool((t) => (t === 'split' ? 'cursor' : 'split'));
       }
     };
 
@@ -186,6 +229,7 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
       <div className="flex-1 relative overflow-hidden">
         <ReactFlowCanvas 
           mode={selectedTool === 'hand' ? 'pan' : 'select'}
+          tool={selectedTool}
           onNodeSelect={setSelectedNode}
           onNodeClick={(node) => {
             if (selectedTool === 'connector') {
@@ -217,6 +261,35 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
             if (selectedTool === 'connector' && pendingConnectorFrom) {
               // cancel dangling connector on pane click
               setPendingConnectorFrom(null);
+            }
+          }}
+          onSplitEdge={({ id, source, target }) => {
+            // Insert a split (condition) node inline between source and target
+            if (!addNodeApi || !flowApi?.addEdge) return;
+            try {
+              // 1) Create condition node near the midpoint
+              // We don't have direct edge coordinates here; place relative to source node
+              const state = (useWorkflowStore as any).getState?.();
+              const src = state?.workflow?.nodes?.find((n: any) => n.id === source);
+              const tgt = state?.workflow?.nodes?.find((n: any) => n.id === target);
+              const mx = src && tgt ? (src.position.x + tgt.position.x) / 2 : (src?.position?.x ?? 100) + 80;
+              const my = src && tgt ? (src.position.y + tgt.position.y) / 2 : (src?.position?.y ?? 100);
+              const splitId = addNodeApi('condition', { position: { x: mx, y: my } as any, data: { label: 'Split' } as any });
+
+              // 2) Remove the original edge and add two edges: source->split and split->target (default to 'true' branch)
+              try { (useWorkflowStore as any).getState?.().removeEdges?.([id]); } catch {}
+
+              // Connect source -> split (control)
+              flowApi.addEdge(source, splitId, 'control');
+              // Connect split -> target on default 'true' out port (handled in addEdge helper)
+              flowApi.addEdge(splitId, target, 'control');
+
+              // 3) Select the new split node and open properties
+              setSelectedNode({ id: splitId } as any);
+              setShowPropertiesPanel(true);
+              setSelectedTool('cursor');
+            } catch (e) {
+              console.warn('Failed to insert split', e);
             }
           }}
           onAddNodeRequest={handleAddNode}

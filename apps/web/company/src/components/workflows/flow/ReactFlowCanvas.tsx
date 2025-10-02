@@ -10,7 +10,8 @@ import {
   Node,
   NodeTypes,
   ReactFlowInstance,
-  MarkerType
+  MarkerType,
+  ConnectionMode
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Zap } from 'lucide-react';
@@ -27,6 +28,10 @@ export interface ReactFlowCanvasProps {
   onNodeClick?: (node: Node) => void;
   onPaneClick?: (pos: { x: number; y: number }) => void;
   onAddNodeRequest?: () => void;
+  // current tool id to allow contextual interactions (e.g., split insertion on edge click)
+  tool?: 'cursor'|'hand'|'connector'|'split'|'text'|string;
+  // when tool === 'split', clicking an edge should trigger this
+  onSplitEdge?: (edge: { id: string; source: string; target: string }) => void;
   onReady?: (api: {
     addNode: AddNodeFn;
     instance: ReactFlowInstance<any, any>;
@@ -44,12 +49,13 @@ export interface ReactFlowCanvasProps {
   initialGrid?: boolean;
 }
 
-export default function ReactFlowCanvas({ onNodeSelect, onNodeClick, onPaneClick, onAddNodeRequest, onReady, mode = 'select', initialMinimap = true, initialGrid = true }: ReactFlowCanvasProps) {
+export default function ReactFlowCanvas({ onNodeSelect, onNodeClick, onPaneClick, onAddNodeRequest, onReady, tool, mode = 'select', initialMinimap = true, initialGrid = true, onSplitEdge }: ReactFlowCanvasProps) {
   // Local rf helpers
   const [rfSelection, setRfSelection] = useState<string | null>(null);
   const [instance, setInstance] = useState<ReactFlowInstance<any, any> | null>(null);
   const [showMinimap, setShowMinimap] = useState(initialMinimap);
   const [showGrid, setShowGrid] = useState(initialGrid);
+  const [ignoreNextSelection, setIgnoreNextSelection] = useState(false);
   const nodeTypes: NodeTypes = useMemo(() => ({ action: ActionNode as any }), []);
 
   // Store bindings
@@ -63,6 +69,7 @@ export default function ReactFlowCanvas({ onNodeSelect, onNodeClick, onPaneClick
     removeNodes,
     addEdge: storeAddEdge,
     selectNodes,
+    selectEdges,
     clearSelection,
   } = useWorkflowStore((s) => ({
     workflow: s.workflow,
@@ -74,8 +81,10 @@ export default function ReactFlowCanvas({ onNodeSelect, onNodeClick, onPaneClick
     removeNodes: s.removeNodes,
     addEdge: s.addEdge,
     selectNodes: s.selectNodes,
+    selectEdges: s.selectEdges,
     clearSelection: s.clearSelection,
   }));
+  const selectedEdgeIds = useWorkflowStore((s) => s.selection.edges);
 
   // nodes/edges mapping
   const rfNodes = useMemo<Node[]>(() => (
@@ -96,23 +105,31 @@ export default function ReactFlowCanvas({ onNodeSelect, onNodeClick, onPaneClick
     }))
   ), [workflow.nodes]);
 
-  const rfEdges = useMemo<Edge[]>(() => (
-    workflow.edges.map((e) => ({
-      id: e.id,
-      source: e.from.nodeId,
-      target: e.to.nodeId,
-      sourceHandle: e.from.portId as any,
-      targetHandle: e.to.portId as any,
-      // show directional arrowheads
-      markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18, color: e.kind === 'error' ? '#f87171' : e.kind === 'data' ? '#a78bfa' : '#60a5fa' },
-      style: {
-        stroke: e.kind === 'error' ? '#f87171' : e.kind === 'data' ? '#a78bfa' : '#60a5fa',
-        strokeWidth: 2,
-        strokeDasharray: e.kind === 'error' ? '5,5' : undefined,
-      },
-      type: 'smoothstep',
-    }))
-  ), [workflow.edges]);
+  const rfEdges = useMemo<Edge[]>(() =>
+    workflow.edges.map((e) => {
+      const isSelected = selectedEdgeIds?.has?.(e.id) ?? false;
+      const color = e.kind === 'error' ? '#f87171' : e.kind === 'data' ? '#a78bfa' : '#60a5fa';
+      return {
+        id: e.id,
+        source: e.from.nodeId,
+        target: e.to.nodeId,
+        sourceHandle: e.from.portId as any,
+        targetHandle: e.to.portId as any,
+        selectable: true,
+        interactionWidth: 8,
+        selected: isSelected,
+        // show directional arrowheads
+        markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18, color },
+        style: {
+          stroke: color,
+          strokeWidth: isSelected ? 2.5 : 2,
+          strokeDasharray: e.kind === 'error' ? '5,5' : undefined,
+          // keep minimalistic; no glow
+        },
+        type: 'smoothstep',
+      } as Edge;
+    })
+  , [workflow.edges, selectedEdgeIds]);
 
   // connection handler to store
   const onConnect = useCallback((connection: Edge | Connection) => {
@@ -175,12 +192,27 @@ export default function ReactFlowCanvas({ onNodeSelect, onNodeClick, onPaneClick
   }, [storeAddNode, selectNodes]);
 
   // selection sync
-  const onSelectionChange = useCallback(({ nodes }: { nodes: Node[] }) => {
+  const onSelectionChange = useCallback(({ nodes, edges }: { nodes: Node[]; edges: Edge[] }) => {
+    if (ignoreNextSelection) {
+      setIgnoreNextSelection(false);
+      return;
+    }
     const node = nodes[0] ?? null;
     setRfSelection(node?.id ?? null);
-    if (node) selectNodes([node.id]); else clearSelection();
-    onNodeSelect?.(node);
-  }, [onNodeSelect, selectNodes, clearSelection]);
+    if (node) {
+      selectNodes([node.id]);
+    } else {
+      selectNodes([]);
+    }
+    if (edges && edges.length) {
+      // sync selected edges to store
+      selectEdges(edges.map((e) => e.id as string));
+    } else {
+      selectEdges([]);
+      if (!node) clearSelection();
+    }
+    onNodeSelect?.(node ?? null);
+  }, [onNodeSelect, selectNodes, selectEdges, clearSelection, ignoreNextSelection]);
 
   // node change: move/remove
   const onNodesChange = useCallback((changes: any[]) => {
@@ -203,8 +235,12 @@ export default function ReactFlowCanvas({ onNodeSelect, onNodeClick, onPaneClick
     if (removed.length) removeNodes(removed);
   }, [workflow.nodes, moveNodes, removeNodes]);
 
-  const onEdgesChange = useCallback((_changes: any[]) => {
-    // TODO: support edge removal if needed
+  const onEdgesChange = useCallback((changes: any[]) => {
+    const removed = changes.filter((c) => c.type === 'remove').map((c) => c.id).filter(Boolean);
+    if (removed.length) {
+      // remove from store when RF deletes selected edges via keyboard
+      try { (useWorkflowStore as any).getState?.().removeEdges(removed); } catch {}
+    }
   }, []);
 
   // Action Library state
@@ -255,10 +291,40 @@ export default function ReactFlowCanvas({ onNodeSelect, onNodeClick, onPaneClick
       <ReactFlow
         nodes={rfNodesWithCallbacks}
         edges={rfEdges}
+        connectionMode={ConnectionMode.Loose}
+        elementsSelectable
+        edgesFocusable
         defaultEdgeOptions={{
           markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18, color: '#60a5fa' },
           style: { stroke: '#60a5fa', strokeWidth: 2 },
           type: 'smoothstep',
+        }}
+        onEdgeClick={(event, edge) => {
+          // Split tool: insert a split node inline on this connection
+          if (tool === 'split' && onSplitEdge) {
+            try {
+              onSplitEdge({ id: edge.id as string, source: edge.source as string, target: edge.target as string });
+              setIgnoreNextSelection(true);
+            } catch {}
+            event?.stopPropagation?.();
+            event?.preventDefault?.();
+            return;
+          }
+          // Toggle selection: if already selected, unselect; otherwise select
+          try {
+            const id = edge.id as string;
+            const isSelected = selectedEdgeIds?.has?.(id) ?? false;
+            if (isSelected) {
+              const rest = Array.from(selectedEdgeIds ?? []).filter((x) => x !== id);
+              selectEdges(rest, false);
+              // prevent RF selection handler from re-selecting this edge
+              setIgnoreNextSelection(true);
+            } else {
+              selectEdges([id], false);
+            }
+          } catch {}
+          event?.stopPropagation?.();
+          event?.preventDefault?.();
         }}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
