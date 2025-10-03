@@ -1,30 +1,59 @@
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Play, Pause, MoreHorizontal, Copy, Edit, Trash2, Calendar, Clock, Loader2 } from 'lucide-react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { listWorkflows } from '@/lib/workflows.client';
+import { Play, Pause, MoreHorizontal, Copy, Edit, Trash2, Calendar, Clock } from 'lucide-react';
 
 interface WorkflowListProps {
   searchQuery: string;
   viewMode: 'grid' | 'list';
   onEditWorkflow: () => void;
 }
-// Shape adapter: map API workflows to the UI's expected fields while preserving UI appearance.
-function toUiWorkflows(api: any[]): Array<{
-  id: string; name: string; description?: string; status: 'active'|'paused'|'error'|'draft'; lastRun: string; created?: string; runs: number; success_rate: number; tags: string[];
-}> {
-  return (api || []).map((w) => ({
-    id: String(w.id),
-    name: w.name || 'Untitled Workflow',
-    description: w.description || '',
-    status: (w.status as any) || 'draft',
-    lastRun: w.updatedAt ? new Date(w.updatedAt).toLocaleString() : '—',
-    created: w.createdAt,
-    runs: (w.runsCount as number) || 0,
-    success_rate: (w.successRate as number) || 100,
-    tags: Array.isArray((w.tags as any)) ? (w.tags as string[]) : [],
-  }))
-}
+
+const mockWorkflows = [
+  {
+    id: '1',
+    name: 'Customer Onboarding',
+    description: 'Automated customer registration and welcome sequence',
+    status: 'active',
+    lastRun: '2 minutes ago',
+    created: '2024-01-15',
+    runs: 1247,
+    success_rate: 98.5,
+    tags: ['customer', 'email', 'automation']
+  },
+  {
+    id: '2',
+    name: 'Data Processing Pipeline',
+    description: 'Process and transform incoming data from multiple sources',
+    status: 'active',
+    lastRun: '15 minutes ago',
+    created: '2024-01-10',
+    runs: 856,
+    success_rate: 96.2,
+    tags: ['data', 'etl', 'database']
+  },
+  {
+    id: '3',
+    name: 'Invoice Generation',
+    description: 'Generate and send invoices automatically',
+    status: 'paused',
+    lastRun: '2 hours ago',
+    created: '2024-01-08',
+    runs: 342,
+    success_rate: 99.1,
+    tags: ['finance', 'pdf', 'email']
+  },
+  {
+    id: '4',
+    name: 'Content Moderation',
+    description: 'AI-powered content review and approval workflow',
+    status: 'error',
+    lastRun: '1 hour ago',
+    created: '2024-01-05',
+    runs: 89,
+    success_rate: 94.3,
+    tags: ['ai', 'moderation', 'content']
+  },
+];
 
 const statusColors = {
   active: 'bg-green-500',
@@ -41,37 +70,11 @@ const statusLabels = {
 };
 
 export function WorkflowList({ searchQuery, viewMode, onEditWorkflow }: WorkflowListProps) {
-  const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['workflows'],
-    queryFn: listWorkflows,
-    staleTime: 5_000,
-    refetchOnWindowFocus: false,
-  })
-
-  const uiWorkflows = toUiWorkflows(data || [])
-  const filteredWorkflows = uiWorkflows.filter(workflow =>
+  const filteredWorkflows = mockWorkflows.filter(workflow =>
     workflow.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    workflow.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    workflow.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
     workflow.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()))
-  )
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center gap-2 text-muted-foreground">
-        <Loader2 className="w-4 h-4 animate-spin" />
-        Loading workflows…
-      </div>
-    )
-  }
-
-  if (isError) {
-    return (
-      <div className="flex items-center justify-between p-4 rounded-md border border-destructive/40 bg-destructive/5 text-destructive">
-        <div>Error loading workflows: {(error as Error).message}</div>
-        <Button size="sm" variant="outline" onClick={() => refetch()}>Retry</Button>
-      </div>
-    )
-  }
+  );
 
   if (viewMode === 'grid') {
     return (
