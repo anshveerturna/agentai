@@ -30,6 +30,7 @@ model Workflow {
   graph         Json
   nodeOverrides Json
   version       Int      @default(1)
+  status        String   @default("draft")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

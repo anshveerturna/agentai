@@ -198,3 +198,53 @@ export async function updateWorkflow(id: string, patch: Partial<Workflow>): Prom
   return res.json()
 }
 
+// --- New helpers ---
+export async function duplicateWorkflow(id: string): Promise<Workflow> {
+  const token = await getAccessToken();
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const proxyUrl = `${BROWSER_PROXY_BASE}/workflows/${id}/duplicate`;
+  const directUrl = `${API_BASE_URL}/workflows/${id}/duplicate`;
+  const url = isBrowser ? proxyUrl : directUrl;
+  const res = await fetch(url, { method: 'POST', headers, credentials: 'include', cache: 'no-store' });
+  if (!res.ok) {
+    const res2 = await fetch(directUrl, { method: 'POST', headers, credentials: 'include', cache: 'no-store' });
+    if (!res2.ok) throw new Error(`Failed to duplicate workflow: ${res2.status} ${res2.statusText}`);
+    return res2.json();
+  }
+  return res.json();
+}
+
+export async function updateWorkflowStatus(id: string, status: string): Promise<{ id: string; status: string }> {
+  const token = await getAccessToken();
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const body = JSON.stringify({ status });
+  const proxyUrl = `${BROWSER_PROXY_BASE}/workflows/${id}/status`;
+  const directUrl = `${API_BASE_URL}/workflows/${id}/status`;
+  const url = isBrowser ? proxyUrl : directUrl;
+  const res = await fetch(url, { method: 'POST', headers, body, credentials: 'include', cache: 'no-store' });
+  if (!res.ok) {
+    const res2 = await fetch(directUrl, { method: 'POST', headers, body, credentials: 'include', cache: 'no-store' });
+    if (!res2.ok) throw new Error(`Failed to update workflow status: ${res2.status} ${res2.statusText}`);
+    return res2.json();
+  }
+  return res.json();
+}
+
+export async function validateWorkflow(id: string): Promise<{ issues: Array<{ code: string; message: string; severity: string }> }> {
+  const token = await getAccessToken();
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const proxyUrl = `${BROWSER_PROXY_BASE}/workflows/${id}/validate`;
+  const directUrl = `${API_BASE_URL}/workflows/${id}/validate`;
+  const url = isBrowser ? proxyUrl : directUrl;
+  const res = await fetch(url, { method: 'POST', headers, credentials: 'include', cache: 'no-store' });
+  if (!res.ok) {
+    const res2 = await fetch(directUrl, { method: 'POST', headers, credentials: 'include', cache: 'no-store' });
+    if (!res2.ok) throw new Error(`Failed to validate workflow: ${res2.status} ${res2.statusText}`);
+    return res2.json();
+  }
+  return res.json();
+}
+

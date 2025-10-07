@@ -29,6 +29,23 @@ export class WorkflowsController {
   @Put(':id')
   update(@Param('id') id: string, @Body() dto: Partial<WorkflowDTO>) { return this.workflows.update(id, dto); }
 
+  // Duplicate a workflow
+  @Post(':id/duplicate')
+  async duplicate(@Param('id') id: string) {
+    const dup = await this.workflows.duplicate(id);
+    if (!dup) throw new NotFoundException('Workflow not found');
+    return dup;
+  }
+
+  // Update only status (does not bump version unless structural fields provided)
+  @Post(':id/status')
+  async updateStatus(@Param('id') id: string, @Body() body: { status: string }) {
+    if (!body?.status) throw new BadRequestException('Missing status');
+    const wf = await this.workflows.update(id, { status: body.status });
+    if (!wf) throw new NotFoundException('Workflow not found');
+    return { id: wf.id, status: (wf as any).status };
+  }
+
   // Optimistic granular additions (mutate graph JSON)
   @Post(':id/nodes')
   async addNode(@Param('id') id: string, @Body() dto: NodeUpsertDTO) {

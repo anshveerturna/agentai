@@ -1,3 +1,4 @@
+"use client";
 import React, { useState, useEffect, useMemo } from 'react';
 import { WorkflowToolbar } from './WorkflowToolbar';
 import ReactFlowCanvas, { type AddNodeFn } from './flow/ReactFlowCanvas';
