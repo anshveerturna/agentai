@@ -15,12 +15,13 @@ import { toExecutionSpec, fromExecutionSpec, validateExecutionSpec } from '@/lib
 import { getWorkflow } from '@/lib/workflows.client';
 
 interface WorkflowCanvasProps {
+  workflowId?: string;
   onBack: () => void;
   isCodeView: boolean;
   onToggleCodeView: () => void;
 }
 
-export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: WorkflowCanvasProps) {
+export function WorkflowCanvas({ workflowId: explicitWorkflowId, onBack, isCodeView, onToggleCodeView }: WorkflowCanvasProps) {
   const [selectedTool, setSelectedTool] = useState('cursor');
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [pendingConnectorFrom, setPendingConnectorFrom] = useState<string | null>(null);
@@ -31,7 +32,8 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
     zoomIn: () => void; zoomOut: () => void; fitView: () => void; toggleMinimap: () => void; toggleGrid: () => void; updateNodeData: (id: string, data: Record<string, any>) => void; addEdge?: (fromId: string, toId: string, kind?: 'control'|'data'|'error') => void;
   } | null>(null);
   const params = useParams();
-  const workflowId = (params?.id as string) ?? undefined;
+  const routeWorkflowId = (params?.id as string) || undefined;
+  const workflowId = explicitWorkflowId || routeWorkflowId || (typeof window !== 'undefined' ? window.location.pathname.split('/').filter(Boolean).pop() : undefined);
 
   // Local autosave/versions state
   const [isSaving, setIsSaving] = useState(false);
@@ -51,8 +53,30 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
       try {
         const wf = await getWorkflow(workflowId);
         const spec = (wf?.graph as any) ?? null;
-        if (spec && typeof spec === 'object' && spec.nodes && spec.flow) {
-          const hydrated = fromExecutionSpec(spec as any);
+        if (spec && typeof spec === 'object') {
+          let hydrated: any;
+          try {
+            hydrated = spec.nodes && spec.flow ? fromExecutionSpec(spec as any) : {
+              id: wf.id,
+              name: wf.name || 'Untitled Workflow',
+              nodes: Array.isArray(spec.nodes) ? spec.nodes : [],
+              edges: Array.isArray(spec.edges) ? spec.edges : [],
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+            };
+          } catch {
+            hydrated = {
+              id: wf.id,
+              name: wf.name || 'Untitled Workflow',
+              nodes: [],
+              edges: [],
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+            };
+          }
+          // Ensure ID & name propagate even if empty graph
+          hydrated.id = wf.id;
+          hydrated.name = wf.name || hydrated.name;
           setWorkflow(hydrated as any);
         }
       } catch (e) {
@@ -201,7 +225,7 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
             <h1 className="text-lg font-semibold truncate" title={workflowSnapshot.name || workflowId}>
               {workflowSnapshot.name || 'Untitled Workflow'}
             </h1>
-            <div className="text-[11px] text-muted-foreground truncate" title={workflowId}>ID: {workflowId}</div>
+            <div className="text-[11px] text-muted-foreground" title={workflowId}>ID: {workflowId}</div>
           </div>
         </div>
 

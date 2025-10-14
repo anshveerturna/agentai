@@ -19,6 +19,7 @@ export default function WorkflowPage() {
         {/* Builder canvas replaces global header */}
         <div className="flex-1 min-h-0">
           <WorkflowCanvas 
+            workflowId={workflowId}
             onBack={handleBack}
             isCodeView={false}
             onToggleCodeView={() => {}}
