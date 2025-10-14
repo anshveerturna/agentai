@@ -23,11 +23,7 @@ type DashboardLayoutProps = {
   export function DashboardLayout({ children, fullBleed = false, contentClassName, hideHeader = false }: DashboardLayoutProps) {
     // Only apply default paddings when fullBleed layout is not enabled
     const defaultPadding = fullBleed ? '' : 'px-8 py-6';
-    if (typeof window !== 'undefined') {
-      // TEMP instrumentation to verify hideHeader behavior at runtime
-      // eslint-disable-next-line no-console
-      console.debug('[DashboardLayout] render', { hideHeader, fullBleed });
-    }
+    // Removed temporary instrumentation
 
   return (
     <div className="flex h-screen bg-background overflow-x-hidden">

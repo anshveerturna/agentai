@@ -186,21 +186,26 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
     <div className="h-full bg-background flex flex-col">
   {/* Builder Header (replaces global header in editor mode) */}
   <div id="workflow-builder-header" className="sticky top-0 flex items-center justify-between px-4 py-3 border-b border-border bg-card z-40" style={{ height: 'var(--app-header-height)' }}>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-4 min-w-0">
           <Button
             variant="ghost"
             size="sm"
             onClick={onBack}
-            className="text-muted-foreground hover:text-foreground"
+            className="text-muted-foreground hover:text-foreground shrink-0"
           >
             <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Dashboard
+            Back
           </Button>
-          <div className="h-6 w-px bg-border mx-2" />
-          <h1 className="text-lg font-semibold">Customer Support Automation</h1>
+          <div className="h-6 w-px bg-border" />
+          <div className="flex flex-col min-w-0">
+            <h1 className="text-lg font-semibold truncate" title={workflowSnapshot.name || workflowId}>
+              {workflowSnapshot.name || 'Untitled Workflow'}
+            </h1>
+            <div className="text-[11px] text-muted-foreground truncate" title={workflowId}>ID: {workflowId}</div>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <div className="text-xs text-muted-foreground pr-2">
             {isSaving ? 'Saving…' : lastSavedAt ? `Saved ${new Date(lastSavedAt).toLocaleTimeString()}` : 'Not saved yet'}
           </div>

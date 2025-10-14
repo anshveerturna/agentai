@@ -102,4 +102,33 @@ This document summarizes the security hardening and related enhancements applied
 - Consider environment-based enabling of detailed logging vs. redaction baseline already in place.
 - Integrate monitoring & scanning tasks early in CI to catch dependency or header drift.
 
-_Last updated: 2025-08-21_
+## 12. Workflow Routing & Builder Layout (Oct 14 2025)
+- Eliminated local editor view state from `workflows/page.tsx`; editing now strictly route-based via `/workflows/:id`.
+- Replaced random client-only IDs with server-created workflows in `/workflows/new` (calls API `POST /workflows` then redirects using returned `id`).
+- Builder header (`WorkflowCanvas`) now displays dynamic workflow name and ID; global header fully suppressed on editor routes.
+- Added robust API client helpers for workflow creation and ensured fallback logic for proxy vs direct API.
+- Removed temporary layout instrumentation (`console.debug`) from `DashboardLayout`.
+- Lockfile cleanup: removed `package-lock.json` to avoid multi-lockfile build warnings (using Bun).
+
+### Impact
+| Issue | Previous State | New Behavior |
+|-------|----------------|--------------|
+| Missing workflow ID in URL | Local state kept user on `/workflows` without ID | Navigation pushes to `/workflows/:id` always for edit/create |
+| Random unsaved client IDs | `Math.random()` ID not persisted server-side | Server returns real persisted `id` from Prisma create |
+| Header mismatch | Global header visible in editor sometimes | Builder header replaces global header on all `/workflows/:id` pages |
+| Debug noise | Console instrumentation logs | Removed for clean production logs |
+| Build warning | Multiple lockfiles | Single Bun lockfile, warning resolved |
+
+### Files Modified
+- `apps/web/company/src/app/workflows/page.tsx`
+- `apps/web/company/src/app/workflows/new/page.tsx`
+- `apps/web/company/src/components/workflows/WorkflowCanvas.tsx`
+- `apps/web/company/src/components/layout/DashboardLayout.tsx`
+
+### Follow-Up TODOs
+- Consider showing breadcrumb with workflow name history (versions) in header.
+- Add optimistic creation spinner test and Playwright E2E for creation flow.
+- Add server-side validation to prevent blank workflow names (currently defaults to "Untitled Workflow").
+- Integrate deletion & duplication flows into routing (after duplicate auto-redirect).
+
+_Last updated: 2025-10-14_
