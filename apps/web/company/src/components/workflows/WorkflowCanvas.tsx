@@ -8,20 +8,19 @@ import { PropertiesPanel } from './PropertiesPanel';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Eye, Code2, Play, Save } from 'lucide-react';
 import type { Node } from '@xyflow/react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useWorkflowStore } from '@/store/workflowStore';
 import { createVersion, listVersions, restoreVersion, updateWorkflow, type WorkflowVersion } from '@/lib/workflows.client';
 import { toExecutionSpec, fromExecutionSpec, validateExecutionSpec } from '@/lib/workflow.serialization';
 import { getWorkflow } from '@/lib/workflows.client';
 
 interface WorkflowCanvasProps {
-  workflowId?: string;
   onBack: () => void;
   isCodeView: boolean;
   onToggleCodeView: () => void;
 }
 
-export function WorkflowCanvas({ workflowId: explicitWorkflowId, onBack, isCodeView, onToggleCodeView }: WorkflowCanvasProps) {
+export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: WorkflowCanvasProps) {
   const [selectedTool, setSelectedTool] = useState('cursor');
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [pendingConnectorFrom, setPendingConnectorFrom] = useState<string | null>(null);
@@ -32,8 +31,8 @@ export function WorkflowCanvas({ workflowId: explicitWorkflowId, onBack, isCodeV
     zoomIn: () => void; zoomOut: () => void; fitView: () => void; toggleMinimap: () => void; toggleGrid: () => void; updateNodeData: (id: string, data: Record<string, any>) => void; addEdge?: (fromId: string, toId: string, kind?: 'control'|'data'|'error') => void;
   } | null>(null);
   const params = useParams();
-  const routeWorkflowId = (params?.id as string) || undefined;
-  const workflowId = explicitWorkflowId || routeWorkflowId || (typeof window !== 'undefined' ? window.location.pathname.split('/').filter(Boolean).pop() : undefined);
+  const workflowId = (params?.id as string) ?? undefined;
+  const router = useRouter();
 
   // Local autosave/versions state
   const [isSaving, setIsSaving] = useState(false);
@@ -53,30 +52,8 @@ export function WorkflowCanvas({ workflowId: explicitWorkflowId, onBack, isCodeV
       try {
         const wf = await getWorkflow(workflowId);
         const spec = (wf?.graph as any) ?? null;
-        if (spec && typeof spec === 'object') {
-          let hydrated: any;
-          try {
-            hydrated = spec.nodes && spec.flow ? fromExecutionSpec(spec as any) : {
-              id: wf.id,
-              name: wf.name || 'Untitled Workflow',
-              nodes: Array.isArray(spec.nodes) ? spec.nodes : [],
-              edges: Array.isArray(spec.edges) ? spec.edges : [],
-              createdAt: Date.now(),
-              updatedAt: Date.now(),
-            };
-          } catch {
-            hydrated = {
-              id: wf.id,
-              name: wf.name || 'Untitled Workflow',
-              nodes: [],
-              edges: [],
-              createdAt: Date.now(),
-              updatedAt: Date.now(),
-            };
-          }
-          // Ensure ID & name propagate even if empty graph
-          hydrated.id = wf.id;
-          hydrated.name = wf.name || hydrated.name;
+        if (spec && typeof spec === 'object' && spec.nodes && spec.flow) {
+          const hydrated = fromExecutionSpec(spec as any);
           setWorkflow(hydrated as any);
         }
       } catch (e) {
@@ -202,34 +179,40 @@ export function WorkflowCanvas({ workflowId: explicitWorkflowId, onBack, isCodeV
     }
   };
 
+  if (!workflowId) {
+    return (
+      <div className="h-screen flex flex-col items-center justify-center gap-4">
+        <p className="text-sm text-muted-foreground">No workflow selected. Return to list to pick or create one.</p>
+        <Button onClick={() => { onBack(); router.push('/workflows'); }}>
+          Back to Workflows
+        </Button>
+      </div>
+    );
+  }
+
   if (isCodeView) {
     return <WorkflowCodeEditor onToggleView={onToggleCodeView} />;
   }
 
   return (
-    <div className="h-full bg-background flex flex-col">
-  {/* Builder Header (replaces global header in editor mode) */}
-  <div id="workflow-builder-header" className="sticky top-0 flex items-center justify-between px-4 py-3 border-b border-border bg-card z-40" style={{ height: 'var(--app-header-height)' }}>
-        <div className="flex items-center gap-4 min-w-0">
+    <div className="h-screen bg-background flex flex-col">
+      {/* Header Bar */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card z-40">
+        <div className="flex items-center gap-3">
           <Button
             variant="ghost"
             size="sm"
             onClick={onBack}
-            className="text-muted-foreground hover:text-foreground shrink-0"
+            className="text-muted-foreground hover:text-foreground"
           >
             <ArrowLeft className="w-4 h-4 mr-2" />
-            Back
+            Back to Dashboard
           </Button>
-          <div className="h-6 w-px bg-border" />
-          <div className="flex flex-col min-w-0">
-            <h1 className="text-lg font-semibold truncate" title={workflowSnapshot.name || workflowId}>
-              {workflowSnapshot.name || 'Untitled Workflow'}
-            </h1>
-            <div className="text-[11px] text-muted-foreground" title={workflowId}>ID: {workflowId}</div>
-          </div>
+          <div className="h-6 w-px bg-border mx-2" />
+          <h1 className="text-lg font-semibold">Workflow Editor</h1>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2">
           <div className="text-xs text-muted-foreground pr-2">
             {isSaving ? 'Saving…' : lastSavedAt ? `Saved ${new Date(lastSavedAt).toLocaleTimeString()}` : 'Not saved yet'}
           </div>
@@ -403,7 +386,7 @@ export function WorkflowCanvas({ workflowId: explicitWorkflowId, onBack, isCodeV
         </div>
       </div>
       {versionsOpen && (
-        <div className="absolute right-4 top-[var(--app-header-height)] z-40 w-96 max-h-[60vh] overflow-auto rounded-lg border border-border bg-card shadow-xl">
+        <div className="absolute right-4 top-16 z-50 w-96 max-h-[60vh] overflow-auto rounded-lg border border-border bg-card shadow-xl">
           <div className="flex items-center justify-between px-4 py-2 border-b border-border/50">
             <div className="font-semibold">Versions</div>
             <button className="text-sm text-muted-foreground" onClick={() => setVersionsOpen(false)}>Close</button>

@@ -36,11 +36,18 @@ export function WorkflowList({ searchQuery, viewMode, onEditWorkflow }: Workflow
 
   useEffect(() => {
     let cancelled = false;
+    console.log('[WorkflowList] mount/refetch index', refreshIndex);
     setLoading(true);
     setError(null);
     listWorkflows()
-      .then(data => { if (!cancelled) { setItems(data); } })
-      .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)); })
+      .then(data => { 
+        console.log('[WorkflowList] fetched', data?.length, 'items');
+        if (!cancelled) { setItems(data); }
+      })
+      .catch(e => { 
+        console.warn('[WorkflowList] fetch error', e);
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e)); 
+      })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [refreshIndex]);
@@ -76,6 +83,7 @@ export function WorkflowList({ searchQuery, viewMode, onEditWorkflow }: Workflow
   }
 
   if (!filteredWorkflows.length) {
+    console.log('[WorkflowList] no workflows after filter. total', items.length, 'searchQuery', searchQuery);
     return (
       <div className="p-8 border border-dashed rounded-lg text-center text-sm text-muted-foreground">
         No workflows found{searchQuery ? ' matching your search.' : '.'}

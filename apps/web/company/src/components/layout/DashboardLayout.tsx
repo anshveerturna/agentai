@@ -14,8 +14,7 @@ type DashboardLayoutProps = {
    */
   contentClassName?: string;
   /**
-   * When true, do not render the global Header (used by visual workflow editor
-   * which replaces it with its own builder header).
+   * Hide the global header (builder pages will render their own header bar)
    */
   hideHeader?: boolean;
 };
@@ -23,13 +22,12 @@ type DashboardLayoutProps = {
   export function DashboardLayout({ children, fullBleed = false, contentClassName, hideHeader = false }: DashboardLayoutProps) {
     // Only apply default paddings when fullBleed layout is not enabled
     const defaultPadding = fullBleed ? '' : 'px-8 py-6';
-    // Removed temporary instrumentation
 
   return (
     <div className="flex h-screen bg-background overflow-x-hidden">
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-x-hidden">
-        {!hideHeader && <Header />}
+  {!hideHeader && <Header />}
         <main className={`flex-1 overflow-y-auto overflow-x-hidden bg-background ${defaultPadding} ${contentClassName ?? ''}`}>
             {fullBleed ? (
               children

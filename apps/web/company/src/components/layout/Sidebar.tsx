@@ -8,7 +8,7 @@ const navItems = [
   { name: 'Home', icon: Home, href: '/' },
   { name: 'Create', icon: Plus, href: '/create' },
   { name: 'Agents', icon: Users, href: '/agents' },
-  { name: 'Flows', icon: Share2, href: '/flows' },
+  { name: 'Workflows', icon: Share2, href: '/workflows' },
   { name: 'Tools', icon: Wrench, href: '/tools' },
   { name: 'Settings', icon: Settings, href: '/settings' },
   { name: 'Security', icon: Shield, href: '/security' },

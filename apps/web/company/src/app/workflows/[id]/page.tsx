@@ -1,31 +1,26 @@
-'use client';
+"use client";
 
-import { useParams } from 'next/navigation';
+import { useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import { WorkflowCanvas } from '@/components/workflows/WorkflowCanvas';
-import { Sidebar } from '@/components/layout/Sidebar';
 
 export default function WorkflowPage() {
   const params = useParams();
-  const workflowId = params.id as string;
+  const router = useRouter();
+  const workflowId = params.id as string | undefined;
+  const [isCodeView, setIsCodeView] = useState(false);
 
-  const handleBack = () => {
-    window.history.back();
-  };
+  function handleBack() {
+    router.push('/workflows');
+  }
 
   return (
-    <div className="flex h-screen bg-background overflow-hidden">
-      <Sidebar />
-      <div className="flex-1 flex flex-col">
-        {/* Builder canvas replaces global header */}
-        <div className="flex-1 min-h-0">
-          <WorkflowCanvas 
-            workflowId={workflowId}
-            onBack={handleBack}
-            isCodeView={false}
-            onToggleCodeView={() => {}}
-          />
-        </div>
-      </div>
+    <div className="h-screen bg-background">
+      <WorkflowCanvas
+        onBack={handleBack}
+        isCodeView={isCodeView}
+        onToggleCodeView={() => setIsCodeView(v => !v)}
+      />
     </div>
   );
 }

@@ -48,7 +48,7 @@ export function Header() {
   }, [open])
 
   return (
-  <header className="sticky top-0 z-50 flex items-center justify-between h-16 px-8 bg-sidebar supports-[backdrop-filter]:bg-sidebar/95 border-b border-sidebar-border shadow-lg backdrop-blur-sm theme-transition">
+  <header className="sticky top-0 z-40 flex items-center justify-between h-16 px-8 bg-sidebar supports-[backdrop-filter]:bg-sidebar/95 border-b border-sidebar-border shadow-lg backdrop-blur-sm theme-transition">
       <div className="flex items-center gap-4">
   <span className="text-2xl font-extrabold tracking-tight bg-gradient-to-br from-[#1F6FEB] to-[#0969DA] bg-clip-text text-transparent theme-transition">Jinni</span>
         <span className="px-3 py-1 rounded-md bg-muted text-xs font-medium text-muted-foreground border border-border">
