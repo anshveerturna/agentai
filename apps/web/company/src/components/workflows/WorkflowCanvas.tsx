@@ -183,9 +183,9 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
   }
 
   return (
-    <div className="h-screen bg-background flex flex-col">
-      {/* Header Bar */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card z-40">
+    <div className="h-full bg-background flex flex-col">
+  {/* Builder Header (replaces global header in editor mode) */}
+  <div id="workflow-builder-header" className="sticky top-0 flex items-center justify-between px-4 py-3 border-b border-border bg-card z-40" style={{ height: 'var(--app-header-height)' }}>
         <div className="flex items-center gap-3">
           <Button
             variant="ghost"
@@ -374,7 +374,7 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
         </div>
       </div>
       {versionsOpen && (
-        <div className="absolute right-4 top-16 z-50 w-96 max-h-[60vh] overflow-auto rounded-lg border border-border bg-card shadow-xl">
+        <div className="absolute right-4 top-[var(--app-header-height)] z-40 w-96 max-h-[60vh] overflow-auto rounded-lg border border-border bg-card shadow-xl">
           <div className="flex items-center justify-between px-4 py-2 border-b border-border/50">
             <div className="font-semibold">Versions</div>
             <button className="text-sm text-muted-foreground" onClick={() => setVersionsOpen(false)}>Close</button>
