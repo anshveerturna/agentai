@@ -118,13 +118,11 @@ export default function ReactFlowCanvas({ onNodeSelect, onNodeClick, onPaneClick
         selectable: true,
         interactionWidth: 8,
         selected: isSelected,
-        // show directional arrowheads
         markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18, color },
         style: {
           stroke: color,
           strokeWidth: isSelected ? 2.5 : 2,
           strokeDasharray: e.kind === 'error' ? '5,5' : undefined,
-          // keep minimalistic; no glow
         },
         type: 'smoothstep',
       } as Edge;
@@ -215,22 +213,22 @@ export default function ReactFlowCanvas({ onNodeSelect, onNodeClick, onPaneClick
   }, [onNodeSelect, selectNodes, selectEdges, clearSelection, ignoreNextSelection]);
 
   // node change: move/remove
+  // Original delta-based move logic (reverted)
   const onNodesChange = useCallback((changes: any[]) => {
-    const moved: Record<string, { x: number; y: number }> = {};
+    const positionChanges: { id: string; dx: number; dy: number }[] = [];
     const removed: string[] = [];
     for (const ch of changes) {
-      if (ch.type === 'position' && ch.position) moved[ch.id] = ch.position;
+      if (ch.type === 'position' && ch.position) {
+        const n = workflow.nodes.find((x) => x.id === ch.id);
+        if (!n) continue;
+        const dx = ch.position.x - n.position.x;
+        const dy = ch.position.y - n.position.y;
+        if (dx !== 0 || dy !== 0) positionChanges.push({ id: ch.id, dx, dy });
+      }
       if (ch.type === 'remove') removed.push(ch.id);
     }
-    const movedIds = Object.keys(moved);
-    if (movedIds.length) {
-      movedIds.forEach((id) => {
-        const n = workflow.nodes.find((x) => x.id === id);
-        if (!n) return;
-        const dx = moved[id].x - n.position.x;
-        const dy = moved[id].y - n.position.y;
-        if (dx !== 0 || dy !== 0) moveNodes([id], dx, dy, 1);
-      });
+    if (positionChanges.length) {
+      positionChanges.forEach(({ id, dx, dy }) => moveNodes([id], dx, dy, 1));
     }
     if (removed.length) removeNodes(removed);
   }, [workflow.nodes, moveNodes, removeNodes]);
@@ -400,34 +398,32 @@ export default function ReactFlowCanvas({ onNodeSelect, onNodeClick, onPaneClick
             fitView: safeFitView,
             toggleMinimap: () => setShowMinimap((s) => !s),
             toggleGrid: () => setShowGrid((s) => !s),
-            setMode: (_mode) => {
-              // handled via props in parent; this is a no-op helper for convenience
-      },
-      updateNodeData: (id: string, data: Record<string, any>) => {
-        const patch: Partial<NodeModel> = {};
-        if (typeof (data as any).label !== 'undefined') (patch as any).label = (data as any).label;
-        if (typeof (data as any).config !== 'undefined') {
-          try {
-            const state = (useWorkflowStore as any).getState?.();
-            const existing = state?.workflow?.nodes?.find((n: any) => n.id === id)?.config ?? {};
-            (patch as any).config = { ...existing, ...(data as any).config };
-          } catch {
-            (patch as any).config = (data as any).config;
-          }
-        }
-        updateNode(id, patch);
-      },
-      addEdge: (fromId: string, toId: string, kind: 'control'|'data'|'error' = 'control') => {
-        const fromNode = workflow.nodes.find((n) => n.id === fromId);
-        const toNode = workflow.nodes.find((n) => n.id === toId);
-        if (!fromNode || !toNode) return;
-        const findPort = (list: Port[], dir: 'in'|'out') => list.find((p) => p.direction === dir)?.id;
-        const fromPort = findPort(fromNode.ports || [], 'out') || (fromNode.ports[0]?.id as string);
-        const toPort = findPort(toNode.ports || [], 'in') || (toNode.ports[0]?.id as string);
-        if (fromPort && toPort) {
-          storeAddEdge({ from: { nodeId: fromNode.id, portId: fromPort }, to: { nodeId: toNode.id, portId: toPort }, kind });
-        }
-      }
+            setMode: (_mode) => { /* no-op for external control */ },
+            updateNodeData: (id: string, data: Record<string, any>) => {
+              const patch: Partial<NodeModel> = {};
+              if (typeof (data as any).label !== 'undefined') (patch as any).label = (data as any).label;
+              if (typeof (data as any).config !== 'undefined') {
+                try {
+                  const state = (useWorkflowStore as any).getState?.();
+                  const existing = state?.workflow?.nodes?.find((n: any) => n.id === id)?.config ?? {};
+                  (patch as any).config = { ...existing, ...(data as any).config };
+                } catch {
+                  (patch as any).config = (data as any).config;
+                }
+              }
+              updateNode(id, patch);
+            },
+            addEdge: (fromId: string, toId: string, kind: 'control'|'data'|'error' = 'control') => {
+              const fromNode = workflow.nodes.find((n) => n.id === fromId);
+              const toNode = workflow.nodes.find((n) => n.id === toId);
+              if (!fromNode || !toNode) return;
+              const findPort = (list: Port[], dir: 'in'|'out') => list.find((p) => p.direction === dir)?.id;
+              const fromPort = findPort(fromNode.ports || [], 'out') || (fromNode.ports[0]?.id as string);
+              const toPort = findPort(toNode.ports || [], 'in') || (toNode.ports[0]?.id as string);
+              if (fromPort && toPort) {
+                storeAddEdge({ from: { nodeId: fromNode.id, portId: fromPort }, to: { nodeId: toNode.id, portId: toPort }, kind });
+              }
+            }
           });
         }}
         fitView

@@ -35,8 +35,12 @@ model Workflow {
   updatedAt     DateTime @updatedAt
 
   // Relations
-  versions WorkflowVersion[]
-  runs     WorkflowRun[]
+  versions        WorkflowVersion[]
+  runs            WorkflowRun[]
+  workingState    WorkflowWorkingState?
+  activeVersionId String? @unique
+  activeVersion   WorkflowVersion? @relation("ActiveVersion", fields: [activeVersionId], references: [id])
+  defaultBranch   String @default("main")
 
   @@index([updatedAt])
 }
@@ -49,12 +53,20 @@ model WorkflowVersion {
   description String?
   graph       Json
   createdAt   DateTime @default(now())
+  // Versioning metadata
+  versionNumber Int?
+  semanticHash  String?
+  diffSummary   String?
+  branch        String  @default("main")
 
   // Relations
   workflow Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  // Back-reference for the named relation from Workflow.activeVersion
+  activeFor Workflow? @relation("ActiveVersion")
 
   @@index([workflowId])
   @@index([createdAt])
+  @@index([workflowId, versionNumber])
 }
 
 model WorkflowRun {
@@ -70,4 +82,16 @@ model WorkflowRun {
 
   @@index([workflowId])
   @@index([createdAt])
+}
+
+/// Working copy per workflow (mutable draft state)
+model WorkflowWorkingState {
+  workflowId String   @id
+  graph      Json
+  layoutHash String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Relations
+  workflow Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
 }

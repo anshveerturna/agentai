@@ -116,6 +116,26 @@ export class WorkflowsController {
     return res;
   }
 
+  // --- Working Copy + Semantic Commit ---
+  @Get(':id/working-copy')
+  getWorkingCopy(@Param('id') id: string) { return this.workflows.getWorkingCopy(id); }
+
+  @Post(':id/working-copy')
+  updateWorkingCopy(@Param('id') id: string, @Body() body: { graph: any }) {
+    if (!body?.graph) throw new BadRequestException('Missing graph');
+    return this.workflows.updateWorkingCopy(id, body.graph);
+  }
+
+  @Post(':id/maybe-commit')
+  maybeCommit(@Param('id') id: string, @Body() body?: { minIntervalSec?: number; threshold?: number }) {
+    return this.workflows.maybeCommit(id, body);
+  }
+
+  @Post(':id/commit')
+  commitExplicit(@Param('id') id: string, @Body() body?: { message?: string }) {
+    return this.workflows.commitExplicit(id, body?.message);
+  }
+
   // --- P3: Run History ---
   @Get(':id/run-history')
   getRunHistory(@Param('id') id: string) { return this.workflows.listRuns(id); }

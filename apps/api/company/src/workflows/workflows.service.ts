@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaClient, type Workflow as WorkflowModel, type WorkflowVersion as WorkflowVersionModel, type WorkflowRun as WorkflowRunModel } from '@prisma/client';
+import { diffAndScore, semanticHash } from './semantic';
 
 const prisma = new PrismaClient();
 
@@ -15,6 +16,7 @@ export interface WorkflowDTO {
 
 @Injectable()
 export class WorkflowsService {
+  // --- Base CRUD ---
   async create(data: WorkflowDTO): Promise<WorkflowModel> {
     return prisma.workflow.create({
       data: {
@@ -64,7 +66,7 @@ export class WorkflowsService {
     });
   }
 
-  // Versions
+  // --- Versions (legacy-style snapshot APIs; kept for compatibility) ---
   async listVersions(workflowId: string): Promise<Array<Pick<WorkflowVersionModel,'id'|'createdAt'|'label'>>> {
     return prisma.workflowVersion.findMany({
       where: { workflowId },
@@ -75,22 +77,63 @@ export class WorkflowsService {
   async createVersion(workflowId: string, label?: string): Promise<{ id: string } | undefined> {
     const wf = await this.findOne(workflowId);
     if (!wf) return undefined;
-    const rec = await prisma.workflowVersion.create({
+    // Compute semantic versionNumber and metadata
+  // Cast prisma to any for fields added by pending migration
+  // @ts-ignore - versionNumber ordering requires regenerated prisma types
+  const last = await (prisma as any).workflowVersion.findFirst({ where: { workflowId }, orderBy: { versionNumber: 'desc' } });
+  // @ts-ignore - versionNumber added by migration
+  const versionNumber = ((last?.versionNumber as number) ?? 0) + 1;
+    const hash = semanticHash(wf.graph);
+    // @ts-ignore - extra fields supported after migration
+    const rec = await (prisma as any).workflowVersion.create({
       data: {
         workflowId,
         label,
         name: wf.name,
         description: wf.description ?? undefined,
-        graph: wf.graph as any
+        graph: wf.graph as any,
+        versionNumber,
+        semanticHash: hash,
+        diffSummary: label || undefined,
+        // @ts-ignore - defaultBranch exists after migration
+        branch: (await prisma.workflow.findUnique({ where: { id: workflowId }, select: { defaultBranch: true } }) as any)?.defaultBranch || 'main',
       }
     });
     return { id: rec.id };
   }
+  // Non-destructive revert: creates a new version whose graph equals selected version
   async restoreVersion(workflowId: string, versionId: string): Promise<{ restored: string } | undefined> {
     const v = await prisma.workflowVersion.findUnique({ where: { id: versionId } });
     if (!v || v.workflowId !== workflowId) return undefined;
-    await prisma.workflow.update({ where: { id: workflowId }, data: { name: v.name, description: v.description ?? undefined, graph: v.graph as any } });
-    return { restored: versionId };
+    const wf = await this.findOne(workflowId);
+    if (!wf) return undefined;
+    // Create a new version identical to 'v'
+    // @ts-ignore - order by versionNumber available post-migration
+    const last = await (prisma as any).workflowVersion.findFirst({ where: { workflowId }, orderBy: { versionNumber: 'desc' } });
+    // @ts-ignore - field exists post-migration
+    const versionNumber = ((last?.versionNumber as number) ?? 0) + 1;
+    // @ts-ignore - extra fields available post-migration
+    const rec = await (prisma as any).workflowVersion.create({
+      data: {
+        workflowId,
+        // @ts-ignore
+        label: `Revert to ${(v as any).versionNumber}`,
+        name: v.name,
+        description: v.description ?? undefined,
+        graph: v.graph as any,
+        versionNumber,
+        // @ts-ignore
+        semanticHash: (v as any).semanticHash,
+        // @ts-ignore
+        diffSummary: `Reverted to v${(v as any).versionNumber}`,
+        // @ts-ignore
+        branch: (v as any).branch,
+      }
+    });
+    // Update active pointer and current workflow graph to match reverted spec
+    // @ts-ignore - activeVersionId exists post-migration
+    await (prisma as any).workflow.update({ where: { id: workflowId }, data: { graph: v.graph as any, activeVersionId: rec.id } });
+    return { restored: rec.id };
   }
 
   // Run history
@@ -173,5 +216,103 @@ export class WorkflowsService {
         features: ['GPT Integration', 'Auto Publishing', 'SEO Optimization']
       }
     ];
+  }
+
+  // --- Working Copy + Semantic Commit APIs ---
+  async getWorkingCopy(workflowId: string): Promise<{ graph: any } | undefined> {
+  // @ts-ignore - model exists post-migration
+  const ws = await (prisma as any).workflowWorkingState.findUnique({ where: { workflowId } });
+    if (ws) return { graph: ws.graph as any };
+    const wf = await this.findOne(workflowId);
+    if (!wf) return undefined;
+    // Initialize from current workflow.graph
+  // @ts-ignore - model exists post-migration
+  const created = await (prisma as any).workflowWorkingState.create({ data: { workflowId, graph: wf.graph as any } });
+    return { graph: created.graph as any };
+  }
+
+  async updateWorkingCopy(workflowId: string, graph: any): Promise<{ semanticHash: string }> {
+    const hash = semanticHash(graph);
+    // @ts-ignore - model exists post-migration
+    await (prisma as any).workflowWorkingState.upsert({
+      where: { workflowId },
+      update: { graph: graph as any },
+      create: { workflowId, graph: graph as any },
+    });
+    return { semanticHash: hash };
+  }
+
+  async maybeCommit(workflowId: string, opts?: { minIntervalSec?: number; threshold?: number }): Promise<{ committed: boolean; versionId?: string; summary?: string }> {
+    const { minIntervalSec = 120, threshold = 5 } = opts || {};
+    const wf = await this.findOne(workflowId);
+    if (!wf) return { committed: false };
+  // @ts-ignore - model exists post-migration
+  const ws = await (prisma as any).workflowWorkingState.findUnique({ where: { workflowId } });
+    if (!ws) return { committed: false };
+  // @ts-ignore - order by versionNumber available post-migration
+  const head = await (prisma as any).workflowVersion.findFirst({ where: { workflowId }, orderBy: { versionNumber: 'desc' } });
+    const headGraph = head?.graph ?? wf.graph;
+    const { score, summary } = diffAndScore(headGraph as any, ws.graph as any);
+    if (score < threshold) return { committed: false };
+    // time gate
+    if (head?.createdAt) {
+      const elapsed = (Date.now() - new Date(head.createdAt).getTime()) / 1000;
+      if (elapsed < minIntervalSec) return { committed: false };
+    }
+    const newHash = semanticHash(ws.graph);
+    // @ts-ignore - semanticHash exists post-migration
+    if (newHash === (head as any)?.semanticHash) return { committed: false };
+    // @ts-ignore - versionNumber exists post-migration
+    const versionNumber = (((head as any)?.versionNumber as number) ?? 0) + 1;
+    // @ts-ignore - extra fields available post-migration
+    const rec = await (prisma as any).workflowVersion.create({
+      data: {
+        workflowId,
+        label: undefined,
+        name: wf.name,
+        description: wf.description ?? undefined,
+        graph: ws.graph as any,
+        versionNumber,
+        semanticHash: newHash,
+        diffSummary: summary,
+        // @ts-ignore - defaultBranch exists post-migration
+        branch: (wf as any).defaultBranch ?? 'main',
+      }
+    });
+    // Do not auto-promote active by default; keep policy flexible. For now, set active to latest.
+    // @ts-ignore - activeVersionId exists post-migration
+    await (prisma as any).workflow.update({ where: { id: workflowId }, data: { activeVersionId: rec.id, graph: ws.graph as any } });
+    return { committed: true, versionId: rec.id, summary };
+  }
+
+  async commitExplicit(workflowId: string, message?: string): Promise<{ id: string }> {
+    const wf = await this.findOne(workflowId);
+    if (!wf) throw new Error('workflow not found');
+  // @ts-ignore - model exists post-migration
+  const ws = await (prisma as any).workflowWorkingState.findUnique({ where: { workflowId } });
+    const graph = (ws?.graph ?? wf.graph) as any;
+    // @ts-ignore - order by versionNumber available post-migration
+    const head = await (prisma as any).workflowVersion.findFirst({ where: { workflowId }, orderBy: { versionNumber: 'desc' } });
+    // @ts-ignore - versionNumber exists post-migration
+    const versionNumber = (((head as any)?.versionNumber as number) ?? 0) + 1;
+    const hash = semanticHash(graph);
+    // @ts-ignore - extra fields available post-migration
+    const rec = await (prisma as any).workflowVersion.create({
+      data: {
+        workflowId,
+        label: message,
+        name: wf.name,
+        description: wf.description ?? undefined,
+        graph,
+        versionNumber,
+        semanticHash: hash,
+        diffSummary: message,
+        // @ts-ignore
+        branch: (wf as any).defaultBranch ?? 'main',
+      }
+    });
+    // @ts-ignore - activeVersionId exists post-migration
+    await (prisma as any).workflow.update({ where: { id: workflowId }, data: { activeVersionId: rec.id, graph } });
+    return { id: rec.id };
   }
 }

@@ -1,16 +1,16 @@
 "use client";
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { WorkflowToolbar } from './WorkflowToolbar';
 import ReactFlowCanvas, { type AddNodeFn } from './flow/ReactFlowCanvas';
 import { WorkflowCodeEditor } from './WorkflowCodeEditor';
 import { CommandPalette } from '@/components/workflows/CommandPalette';
 import { PropertiesPanel } from './PropertiesPanel';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Eye, Code2, Play, Save } from 'lucide-react';
+import { ArrowLeft, Eye, Code2, Play } from 'lucide-react';
 import type { Node } from '@xyflow/react';
 import { useParams, useRouter } from 'next/navigation';
 import { useWorkflowStore } from '@/store/workflowStore';
-import { createVersion, listVersions, restoreVersion, updateWorkflow, type WorkflowVersion } from '@/lib/workflows.client';
+import { createVersion, listVersions, restoreVersion, updateWorkflow, type WorkflowVersion, getWorkingCopy as apiGetWorkingCopy, updateWorkingCopy as apiUpdateWorkingCopy, commit as apiCommit } from '@/lib/workflows.client';
 import { toExecutionSpec, fromExecutionSpec, validateExecutionSpec } from '@/lib/workflow.serialization';
 import { getWorkflow } from '@/lib/workflows.client';
 
@@ -37,64 +37,188 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
   // Local autosave/versions state
   const [isSaving, setIsSaving] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
+  const [lastSyncedHash, setLastSyncedHash] = useState<string | null>(null);
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [versions, setVersions] = useState<WorkflowVersion[] | null>(null);
+  const [latestVersionMeta, setLatestVersionMeta] = useState<{ versionNumber?: number | null; semanticHash?: string | null } | null>(null);
+  const [recentVersions, setRecentVersions] = useState<WorkflowVersion[]>([]);
+  const [autosaveEnabled, setAutosaveEnabled] = useState(true);
+  const lastManualSaveAtRef = useRef<number>(0);
 
   // Observe store workflow for dirty tracking
   const workflowSnapshot = useWorkflowStore((s) => s.workflow);
   const setWorkflow = useWorkflowStore((s) => (s as any).setWorkflow as (wf: any) => void);
-  const workflowHash = useMemo(() => JSON.stringify({ nodes: workflowSnapshot.nodes, edges: workflowSnapshot.edges, meta: { name: workflowSnapshot.name } }), [workflowSnapshot.nodes, workflowSnapshot.edges, workflowSnapshot.name]);
+  const updateNodeInStore = useWorkflowStore((s) => (s as any).updateNode as any);
+  const [localName, setLocalName] = useState<string>(workflowSnapshot?.name || 'Untitled Workflow');
+  useEffect(() => { setLocalName(workflowSnapshot?.name || 'Untitled Workflow'); }, [workflowSnapshot?.name]);
+  const nameSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const persistName = (name: string) => {
+    if (!workflowId) return;
+    try { updateWorkflow(workflowId, { name }); } catch {}
+  };
+  const onNameChange = (val: string) => {
+    setLocalName(val);
+    // update store immediately for UI
+    try {
+      setWorkflow({ ...workflowSnapshot, name: val } as any);
+    } catch {}
+    // debounce backend update
+    if (nameSaveTimer.current) clearTimeout(nameSaveTimer.current);
+    nameSaveTimer.current = setTimeout(() => persistName(val), 500);
+  };
+  // Compute a normalized hash of the graph that ignores transient UI fields (like selection) and is order-insensitive.
+  const stableStringify = (obj: any): string => {
+    if (obj === null || typeof obj !== 'object') return JSON.stringify(obj);
+    if (Array.isArray(obj)) return '[' + obj.map((v) => stableStringify(v)).join(',') + ']';
+    const keys = Object.keys(obj).sort();
+    const entries = keys.map((k) => JSON.stringify(k) + ':' + stableStringify((obj as any)[k]));
+    return '{' + entries.join(',') + '}';
+  };
 
+  const computeGraphHash = (wf: any) => {
+    try {
+      const normNodes = (wf?.nodes ?? [])
+        .map((n: any) => ({
+          id: n.id,
+          label: n.label,
+          kind: n.kind,
+          position: { x: n?.position?.x ?? 0, y: n?.position?.y ?? 0 },
+          size: n?.size ? { width: n.size.width ?? undefined, height: n.size.height ?? undefined } : undefined,
+          ports: (n?.ports ?? [])
+            .map((p: any) => ({ id: p.id, name: p.name, direction: p.direction, kind: p.kind }))
+            .sort((a: any, b: any) => (a.id || '').localeCompare(b.id || '')),
+          // config can be arbitrary; include as-is for semantics
+          config: n?.config ?? undefined,
+        }))
+        .sort((a: any, b: any) => (a.id || '').localeCompare(b.id || ''));
+      const normEdges = (wf?.edges ?? [])
+        .map((e: any) => ({
+          id: e.id,
+          kind: e.kind,
+          from: { nodeId: e?.from?.nodeId, portId: e?.from?.portId },
+          to: { nodeId: e?.to?.nodeId, portId: e?.to?.portId },
+        }))
+        .sort((a: any, b: any) => (a.id || '').localeCompare(b.id || ''));
+      const meta = { name: wf?.name ?? undefined };
+      return stableStringify({ nodes: normNodes, edges: normEdges, meta });
+    } catch {
+      // fallback to basic representation
+      return stableStringify({ nodes: wf?.nodes ?? [], edges: wf?.edges ?? [], meta: { name: wf?.name } });
+    }
+  };
+  const workflowHash = useMemo(() => computeGraphHash(workflowSnapshot), [workflowSnapshot.nodes, workflowSnapshot.edges, workflowSnapshot.name]);
+  const hasUnsaved = useMemo(() => {
+    if (lastSavedAt == null) return false; // show "Not saved yet" until first successful sync
+    const unsaved = lastSyncedHash !== workflowHash;
+    if (unsaved) {
+      console.log('[hasUnsaved] TRUE - lastSynced:', lastSyncedHash?.slice(0, 30), 'current:', workflowHash.slice(0, 30));
+    }
+    return unsaved;
+  }, [lastSyncedHash, workflowHash, lastSavedAt]);
+  // Keep minimal saved status only; hide commit-ready/hash chips per request
+
+  async function refreshLatestVersion() {
+    if (!workflowId) return;
+    try {
+      const list = await listVersions(workflowId);
+      if (list && list.length) {
+        const sorted = [...list].sort((a, b) => {
+          const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          return tb - ta;
+        });
+        const top = sorted[0];
+        setLatestVersionMeta({ versionNumber: (top as any).versionNumber ?? null, semanticHash: (top as any).semanticHash ?? null });
+        setRecentVersions(sorted.slice(0, 12));
+      }
+    } catch {}
+  }
+
+  // Initial hydration (runs once per workflowId)
   useEffect(() => {
     if (!workflowId) return;
-    // Initial hydration from backend
     (async () => {
+      try {
+        const working = await apiGetWorkingCopy(workflowId);
+        if (working?.graph) {
+          const hydrated = fromExecutionSpec(working.graph as any);
+          // Try fetching workflow metadata to get name
+          try {
+            const wfMeta = await getWorkflow(workflowId);
+            (hydrated as any).name = (wfMeta?.name as any) || (hydrated as any).name;
+          } catch {}
+          setWorkflow(hydrated as any);
+          try {
+            const h = computeGraphHash(hydrated);
+            setLastSyncedHash(h);
+            setLastSavedAt(Date.now());
+          } catch {}
+          return;
+        }
+      } catch {}
       try {
         const wf = await getWorkflow(workflowId);
         const spec = (wf?.graph as any) ?? null;
         if (spec && typeof spec === 'object' && spec.nodes && spec.flow) {
           const hydrated = fromExecutionSpec(spec as any);
           setWorkflow(hydrated as any);
+          try {
+            const h = computeGraphHash(hydrated);
+            setLastSyncedHash(h);
+            setLastSavedAt(Date.now());
+          } catch {}
         }
       } catch (e) {
         console.warn('Initial hydration failed', e);
       }
     })();
-    // Debounced autosave every 30s when changes detected
-    const interval = setInterval(async () => {
+    refreshLatestVersion();
+  }, [workflowId]);
+
+  // Debounced working-copy sync (reacts to graph changes). No auto-commit.
+  useEffect(() => {
+    if (!workflowId) return;
+    if (!autosaveEnabled) return;
+    const timeout = setTimeout(async () => {
+      // Skip autosave if a manual save just happened (small window to avoid races)
+      if (Date.now() - lastManualSaveAtRef.current < 500) {
+        console.log('[Autosave] Skipped (manual save just happened)');
+        return;
+      }
       try {
         setIsSaving(true);
-        // 1) push current execution spec to backend (validate before versioning)
         const spec = toExecutionSpec(workflowSnapshot as any);
-        await updateWorkflow(workflowId, { graph: spec });
-        const valid = validateExecutionSpec(spec);
-        // 2) create a new version if valid
-        if (valid.ok) await createVersion(workflowId, 'Auto-save');
+        await apiUpdateWorkingCopy(workflowId, spec);
+        // mark current snapshot as synced on success
+        console.log('[Autosave] Setting lastSyncedHash to:', workflowHash.slice(0, 50));
+        setLastSyncedHash(workflowHash);
         setLastSavedAt(Date.now());
       } catch (e) {
-        console.warn('Autosave failed', e);
+        console.warn('Working copy sync failed', e);
       } finally {
         setIsSaving(false);
       }
-    }, 30_000);
-    return () => clearInterval(interval);
-  }, [workflowId, workflowHash, workflowSnapshot.nodes, workflowSnapshot.edges]);
+    }, 800);
+    return () => clearTimeout(timeout);
+  }, [workflowId, workflowHash, autosaveEnabled]);
 
-  async function manualSave() {
+  async function commitNow() {
     if (!workflowId) return;
     try {
       setIsSaving(true);
-      const spec = toExecutionSpec(workflowSnapshot as any);
-      await updateWorkflow(workflowId, { graph: spec });
+      // Validate snapshot and commit explicitly
+      const snapshot = { ...workflowSnapshot } as any;
+      const spec = toExecutionSpec(snapshot as any);
       const valid = validateExecutionSpec(spec);
-      if (valid.ok) {
-        await createVersion(workflowId, 'Manual save');
-      } else {
-        console.warn('Validation failed, version not created', valid.errors);
+      if (!valid.ok) {
+        console.warn('Validation failed, commit skipped', valid.errors);
+        return;
       }
-      setLastSavedAt(Date.now());
+      await apiCommit(workflowId, undefined);
+      await refreshLatestVersion();
+      // Committing doesn't change working copy hash; status stays based on autosave
     } catch (e) {
-      console.warn('Save failed', e);
+      console.warn('Commit failed', e);
     } finally {
       setIsSaving(false);
     }
@@ -121,6 +245,11 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
       if (spec && typeof spec === 'object' && spec.nodes && spec.flow) {
         const hydrated = fromExecutionSpec(spec as any);
         setWorkflow(hydrated as any);
+        try {
+          const h = computeGraphHash(hydrated);
+          setLastSyncedHash(h);
+          setLastSavedAt(Date.now());
+        } catch {}
       }
     } catch (e) {
       console.warn('Restore failed', e);
@@ -194,6 +323,19 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
     return <WorkflowCodeEditor onToggleView={onToggleCodeView} />;
   }
 
+  const relativeTime = useMemo(() => {
+    if (!lastSavedAt) return 'Not saved yet';
+    const diff = Date.now() - lastSavedAt;
+    const sec = Math.floor(diff / 1000);
+    if (sec < 60) return `Saved ${sec}s ago`;
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `Saved ${min}m ago`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `Saved ${hr}h ago`;
+    const day = Math.floor(hr / 24);
+    return `Saved ${day}d ago`;
+  }, [lastSavedAt]);
+
   return (
     <div className="h-screen bg-background flex flex-col">
       {/* Header Bar */}
@@ -209,13 +351,31 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
             Back to Dashboard
           </Button>
           <div className="h-6 w-px bg-border mx-2" />
-          <h1 className="text-lg font-semibold">Workflow Editor</h1>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">Workflow:</span>
+            <input
+              value={localName}
+              onChange={(e) => onNameChange(e.target.value)}
+              className="bg-transparent border border-border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              placeholder="Untitled Workflow"
+            />
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="text-xs text-muted-foreground pr-2">
-            {isSaving ? 'Saving…' : lastSavedAt ? `Saved ${new Date(lastSavedAt).toLocaleTimeString()}` : 'Not saved yet'}
+          <div className="text-xs text-muted-foreground pr-2 min-w-[140px] text-right">
+            {isSaving ? 'Syncing…' : hasUnsaved ? 'Unsaved changes' : relativeTime}
           </div>
+          {/* Autosave toggle */}
+          <label className="flex items-center gap-2 text-xs text-muted-foreground mr-2 select-none">
+            <input
+              type="checkbox"
+              className="accent-primary"
+              checked={autosaveEnabled}
+              onChange={(e) => setAutosaveEnabled(e.target.checked)}
+            />
+            Autosave
+          </label>
           <Button
             variant={isCodeView ? "default" : "outline"}
             size="sm"
@@ -224,12 +384,11 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
             {isCodeView ? <Eye className="w-4 h-4 mr-2" /> : <Code2 className="w-4 h-4 mr-2" />}
             {isCodeView ? "Visual" : "Code"}
           </Button>
-          <Button variant="outline" size="sm" onClick={() => manualSave()}>
-            <Save className="w-4 h-4 mr-2" />
-            Save
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => openVersions()}>
+          <Button variant="outline" size="sm" onClick={() => setVersionsOpen(true)}>
             History
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => commitNow()}>
+            Commit
           </Button>
           <Button size="sm">
             <Play className="w-4 h-4 mr-2" />

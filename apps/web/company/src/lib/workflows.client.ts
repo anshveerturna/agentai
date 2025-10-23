@@ -130,6 +130,8 @@ export interface WorkflowVersion {
   snapshot?: string | null
   createdAt?: string
   createdBy?: string
+  versionNumber?: number | null
+  semanticHash?: string | null
 }
 
 export async function listVersions(workflowId: string): Promise<WorkflowVersion[]> {
@@ -243,6 +245,74 @@ export async function validateWorkflow(id: string): Promise<{ issues: Array<{ co
   if (!res.ok) {
     const res2 = await fetch(directUrl, { method: 'POST', headers, credentials: 'include', cache: 'no-store' });
     if (!res2.ok) throw new Error(`Failed to validate workflow: ${res2.status} ${res2.statusText}`);
+    return res2.json();
+  }
+  return res.json();
+}
+
+// Working copy + semantic commit helpers
+export async function getWorkingCopy(workflowId: string): Promise<{ workflowId: string; graph: any; updatedAt?: string } | null> {
+  const token = await getAccessToken();
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const proxyUrl = `${BROWSER_PROXY_BASE}/workflows/${workflowId}/working-copy`;
+  const directUrl = `${API_BASE_URL}/workflows/${workflowId}/working-copy`;
+  const url = isBrowser ? proxyUrl : directUrl;
+  const res = await fetch(url, { headers, credentials: 'include', cache: 'no-store' });
+  if (!res.ok) {
+    const res2 = await fetch(directUrl, { headers, credentials: 'include', cache: 'no-store' });
+    if (!res2.ok) return null;
+    return res2.json();
+  }
+  return res.json();
+}
+
+export async function updateWorkingCopy(workflowId: string, graph: any): Promise<{ ok: boolean; updatedAt?: string }> {
+  const token = await getAccessToken();
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const body = JSON.stringify({ graph });
+  const proxyUrl = `${BROWSER_PROXY_BASE}/workflows/${workflowId}/working-copy`;
+  const directUrl = `${API_BASE_URL}/workflows/${workflowId}/working-copy`;
+  const url = isBrowser ? proxyUrl : directUrl;
+  const res = await fetch(url, { method: 'POST', headers, body, credentials: 'include', cache: 'no-store' });
+  if (!res.ok) {
+    const res2 = await fetch(directUrl, { method: 'POST', headers, body, credentials: 'include', cache: 'no-store' });
+    if (!res2.ok) throw new Error(`Failed to update working copy: ${res2.status} ${res2.statusText}`);
+    return res2.json();
+  }
+  return res.json();
+}
+
+export async function maybeCommit(workflowId: string, opts?: { minIntervalSec?: number; threshold?: number }): Promise<{ committed: boolean; versionId?: string; versionNumber?: number }>{
+  const token = await getAccessToken();
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const body = JSON.stringify(opts || {});
+  const proxyUrl = `${BROWSER_PROXY_BASE}/workflows/${workflowId}/maybe-commit`;
+  const directUrl = `${API_BASE_URL}/workflows/${workflowId}/maybe-commit`;
+  const url = isBrowser ? proxyUrl : directUrl;
+  const res = await fetch(url, { method: 'POST', headers, body, credentials: 'include', cache: 'no-store' });
+  if (!res.ok) {
+    const res2 = await fetch(directUrl, { method: 'POST', headers, body, credentials: 'include', cache: 'no-store' });
+    if (!res2.ok) throw new Error(`Failed to maybe-commit: ${res2.status} ${res2.statusText}`);
+    return res2.json();
+  }
+  return res.json();
+}
+
+export async function commit(workflowId: string, message?: string): Promise<{ id: string; versionNumber?: number }>{
+  const token = await getAccessToken();
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const body = JSON.stringify({ message });
+  const proxyUrl = `${BROWSER_PROXY_BASE}/workflows/${workflowId}/commit`;
+  const directUrl = `${API_BASE_URL}/workflows/${workflowId}/commit`;
+  const url = isBrowser ? proxyUrl : directUrl;
+  const res = await fetch(url, { method: 'POST', headers, body, credentials: 'include', cache: 'no-store' });
+  if (!res.ok) {
+    const res2 = await fetch(directUrl, { method: 'POST', headers, body, credentials: 'include', cache: 'no-store' });
+    if (!res2.ok) throw new Error(`Failed to commit: ${res2.status} ${res2.statusText}`);
     return res2.json();
   }
   return res.json();
