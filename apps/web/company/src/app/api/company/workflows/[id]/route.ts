@@ -38,10 +38,10 @@ async function buildAuthHeaders(req: NextRequest) {
 
 export async function GET(req: NextRequest, ctx: any) {
   try {
-    const apiBase = process.env.NEXT_PUBLIC_API_URL
-    if (!apiBase) return NextResponse.json({ error: 'API endpoint not configured' }, { status: 500 })
+    // Fallback to local dev API when env is not set
+    const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002'
     const headers = await buildAuthHeaders(req)
-  const { id } = await ctx.params
+    const { id } = (ctx?.params || {}) as { id: string }
     const res = await fetch(`${apiBase}/workflows/${id}`, { headers, credentials: 'include', cache: 'no-store' })
     const text = await res.text()
     return new NextResponse(text, { status: res.status, headers: { 'content-type': res.headers.get('content-type') || 'application/json' } })
@@ -54,12 +54,28 @@ export async function GET(req: NextRequest, ctx: any) {
 
 export async function PUT(req: NextRequest, ctx: any) {
   try {
-    const apiBase = process.env.NEXT_PUBLIC_API_URL
-    if (!apiBase) return NextResponse.json({ error: 'API endpoint not configured' }, { status: 500 })
+    // Fallback to local dev API when env is not set
+    const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002'
     const headers = await buildAuthHeaders(req)
     const body = await req.text()
-  const { id } = await ctx.params
+    const { id } = (ctx?.params || {}) as { id: string }
     const res = await fetch(`${apiBase}/workflows/${id}`, { method: 'PUT', headers, body, credentials: 'include', cache: 'no-store' })
+    const text = await res.text()
+    return new NextResponse(text, { status: res.status, headers: { 'content-type': res.headers.get('content-type') || 'application/json' } })
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e)
+    const code = msg === 'Unauthorized' ? 401 : 500
+    return NextResponse.json({ error: 'Proxy error', message: msg }, { status: code })
+  }
+}
+
+export async function DELETE(req: NextRequest, ctx: any) {
+  try {
+    // Fallback to local dev API when env is not set
+    const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002'
+    const headers = await buildAuthHeaders(req)
+  const { id } = (ctx?.params || {}) as { id: string }
+    const res = await fetch(`${apiBase}/workflows/${id}`, { method: 'DELETE', headers, credentials: 'include', cache: 'no-store' })
     const text = await res.text()
     return new NextResponse(text, { status: res.status, headers: { 'content-type': res.headers.get('content-type') || 'application/json' } })
   } catch (e: unknown) {

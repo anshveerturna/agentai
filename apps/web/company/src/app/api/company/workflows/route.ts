@@ -16,11 +16,8 @@ function getCookieFromHeader(req: NextRequest, name: string): string | undefined
 
 export async function GET(req: NextRequest) {
   try {
-    const apiBase = process.env.NEXT_PUBLIC_API_URL
-    if (!apiBase) {
-      console.error('Proxy Error: NEXT_PUBLIC_API_URL is not set.')
-      return NextResponse.json({ error: 'API endpoint is not configured' }, { status: 500 })
-    }
+    // Fallback to local dev API when env is not set
+    const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002'
 
     const cookieStore = await cookies()
     const token = cookieStore.get('sb-access-token')?.value || req.cookies.get('sb-access-token')?.value || getCookieFromHeader(req, 'sb-access-token')
@@ -67,11 +64,8 @@ export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
   try {
-    const apiBase = process.env.NEXT_PUBLIC_API_URL
-    if (!apiBase) {
-      console.error('Proxy Error: NEXT_PUBLIC_API_URL is not set.')
-      return NextResponse.json({ error: 'API endpoint is not configured' }, { status: 500 })
-    }
+    // Fallback to local dev API when env is not set
+    const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002'
 
     const cookieStore = await cookies()
     const token = cookieStore.get('sb-access-token')?.value || req.cookies.get('sb-access-token')?.value || getCookieFromHeader(req, 'sb-access-token')

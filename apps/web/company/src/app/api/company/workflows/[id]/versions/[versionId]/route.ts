@@ -28,7 +28,7 @@ async function buildAuthHeaders(req: NextRequest) {
     if (process.env.NODE_ENV !== 'production') {
       headers.set('authorization', 'Bearer dev')
       headers.set('x-company-id', 'dev-company')
-      console.warn('Working-copy proxy (DEV): injecting dummy Authorization')
+      console.warn('Version item proxy (DEV): injecting dummy Authorization')
     } else {
       throw new Error('Unauthorized')
     }
@@ -36,30 +36,13 @@ async function buildAuthHeaders(req: NextRequest) {
   return headers
 }
 
-export async function GET(req: NextRequest, ctx: any) {
+export async function DELETE(req: NextRequest, ctx: any) {
   try {
     const apiBase = process.env.NEXT_PUBLIC_API_URL
     if (!apiBase) return NextResponse.json({ error: 'API endpoint not configured' }, { status: 500 })
-  const headers = await buildAuthHeaders(req)
-  const { id } = (ctx?.params || {}) as { id: string }
-    const res = await fetch(`${apiBase}/workflows/${id}/working-copy`, { headers, credentials: 'include', cache: 'no-store' })
-    const text = await res.text()
-    return new NextResponse(text, { status: res.status, headers: { 'content-type': res.headers.get('content-type') || 'application/json' } })
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e)
-    const code = msg === 'Unauthorized' ? 401 : 500
-    return NextResponse.json({ error: 'Proxy error', message: msg }, { status: code })
-  }
-}
-
-export async function POST(req: NextRequest, ctx: any) {
-  try {
-    const apiBase = process.env.NEXT_PUBLIC_API_URL
-    if (!apiBase) return NextResponse.json({ error: 'API endpoint not configured' }, { status: 500 })
-  const headers = await buildAuthHeaders(req)
-  const body = await req.text()
-  const { id } = (ctx?.params || {}) as { id: string }
-    const res = await fetch(`${apiBase}/workflows/${id}/working-copy`, { method: 'POST', headers, body, credentials: 'include', cache: 'no-store' })
+    const headers = await buildAuthHeaders(req)
+    const { id, versionId } = await ctx.params
+    const res = await fetch(`${apiBase}/workflows/${id}/versions/${versionId}`, { method: 'DELETE', headers, credentials: 'include', cache: 'no-store' })
     const text = await res.text()
     return new NextResponse(text, { status: res.status, headers: { 'content-type': res.headers.get('content-type') || 'application/json' } })
   } catch (e: unknown) {

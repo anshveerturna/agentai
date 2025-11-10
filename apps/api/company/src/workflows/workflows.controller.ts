@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Put, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put, Delete as Del, NotFoundException, BadRequestException } from '@nestjs/common';
 import { WorkflowsService } from './workflows.service';
 import type { WorkflowDTO } from './workflows.service';
 
@@ -28,6 +28,13 @@ export class WorkflowsController {
 
   @Put(':id')
   update(@Param('id') id: string, @Body() dto: Partial<WorkflowDTO>) { return this.workflows.update(id, dto); }
+
+  @Del(':id')
+  async remove(@Param('id') id: string) {
+    const res = await this.workflows.remove(id);
+    if (!res) throw new NotFoundException('Workflow not found');
+    return res;
+  }
 
   // Duplicate a workflow
   @Post(':id/duplicate')
@@ -116,6 +123,13 @@ export class WorkflowsController {
     return res;
   }
 
+  @Del(':id/versions/:versionId')
+  async deleteVersion(@Param('id') id: string, @Param('versionId') versionId: string) {
+    const res = await this.workflows.deleteVersion(id, versionId);
+    if (!res) throw new NotFoundException('Version not found');
+    return res;
+  }
+
   // --- Working Copy + Semantic Commit ---
   @Get(':id/working-copy')
   getWorkingCopy(@Param('id') id: string) { return this.workflows.getWorkingCopy(id); }
@@ -132,8 +146,8 @@ export class WorkflowsController {
   }
 
   @Post(':id/commit')
-  commitExplicit(@Param('id') id: string, @Body() body?: { message?: string }) {
-    return this.workflows.commitExplicit(id, body?.message);
+  commitExplicit(@Param('id') id: string, @Body() body?: { name?: string; description?: string }) {
+    return this.workflows.commitExplicit(id, body?.name, body?.description);
   }
 
   // --- P3: Run History ---

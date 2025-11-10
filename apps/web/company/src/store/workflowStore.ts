@@ -51,6 +51,9 @@ type Actions = {
   updateNode: (id: UUID, patch: Partial<NodeModel>) => void;
   moveNodes: (ids: UUID[], dx: number, dy: number, snap?: number) => void;
   removeNodes: (ids: UUID[]) => void;
+  // grouping
+  groupNodes: (nodeIds: UUID[]) => UUID | null;
+  ungroupNodes: (groupId: UUID) => void;
   // edges
   addEdge: (edge: Omit<Edge, "id">) => UUID;
   removeEdges: (ids: UUID[]) => void;
@@ -351,6 +354,73 @@ const creator: StateCreator<
           draft.connectionDraft = undefined;
         })
       ),
+
+  groupNodes: (nodeIds: UUID[]) => {
+    if (nodeIds.length === 0) return null;
+
+    const groupId = uuid();
+    set(
+      produce<WorkflowStore>((draft: WorkflowStore) => {
+        // Find nodes to group from draft
+        const nodesToGroup = draft.workflow.nodes.filter((n) => nodeIds.includes(n.id));
+        if (nodesToGroup.length === 0) return;
+
+        // Calculate bounding box with padding (keep children absolute; group is a visual frame)
+        const padding = { top: 40, right: 24, bottom: 32, left: 24 };
+        const minX = Math.min(...nodesToGroup.map((n) => n.position.x)) - padding.left;
+        const minY = Math.min(...nodesToGroup.map((n) => n.position.y)) - padding.top;
+        const maxX = Math.max(
+          ...nodesToGroup.map((n) => n.position.x + (n.size?.width || 220))
+        ) + padding.right;
+        const maxY = Math.max(
+          ...nodesToGroup.map((n) => n.position.y + (n.size?.height || 100))
+        ) + padding.bottom;
+        const width = maxX - minX;
+        const height = maxY - minY;
+
+        // Create group node (no parenting)
+        draft.workflow.nodes.push({
+          id: groupId,
+          kind: 'action' as any,
+          label: 'Group',
+          position: { x: minX, y: minY },
+          size: { width, height },
+          ports: [],
+          config: {
+            nodeType: 'group',
+            childCount: nodeIds.length,
+            childIds: nodeIds,
+            padding,
+          },
+        });
+
+        // Ensure any legacy parenting flags are removed on children
+        nodeIds.forEach((nodeId) => {
+          const n = draft.workflow.nodes.find((x) => x.id === nodeId) as any;
+          if (!n) return;
+          delete n.parentNode;
+          delete n.extent;
+        });
+
+        draft.workflow.updatedAt = Date.now();
+      })
+    );
+
+    return groupId;
+  },
+
+  ungroupNodes: (groupId: UUID) => {
+    set(
+      produce<WorkflowStore>((draft: WorkflowStore) => {
+        const groupNode = draft.workflow.nodes.find((n) => n.id === groupId);
+        if (!groupNode || (groupNode.config as any)?.nodeType !== 'group') return;
+
+        // Just remove the group node; children remain at absolute positions
+        draft.workflow.nodes = draft.workflow.nodes.filter((n) => n.id !== groupId);
+        draft.workflow.updatedAt = Date.now();
+      })
+    );
+  },
 });
 
 export const useWorkflowStore = create<WorkflowStore>()(devtools(creator));

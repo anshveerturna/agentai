@@ -5,8 +5,9 @@ import ReactFlowCanvas, { type AddNodeFn } from './flow/ReactFlowCanvas';
 import { WorkflowCodeEditor } from './WorkflowCodeEditor';
 import { CommandPalette } from '@/components/workflows/CommandPalette';
 import { PropertiesPanel } from './PropertiesPanel';
+import { CommitDialog } from './CommitDialog';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Eye, Code2, Play } from 'lucide-react';
+import { ArrowLeft, Eye, Code2, Play, Trash2 } from 'lucide-react';
 import type { Node } from '@xyflow/react';
 import { useParams, useRouter } from 'next/navigation';
 import { useWorkflowStore } from '@/store/workflowStore';
@@ -43,7 +44,19 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
   const [latestVersionMeta, setLatestVersionMeta] = useState<{ versionNumber?: number | null; semanticHash?: string | null } | null>(null);
   const [recentVersions, setRecentVersions] = useState<WorkflowVersion[]>([]);
   const [autosaveEnabled, setAutosaveEnabled] = useState(true);
+  const [showCommitDialog, setShowCommitDialog] = useState(false);
+  // Prevent UI flash by gating canvas render until hydration completes for the current workflow
+  const [hydrating, setHydrating] = useState<boolean>(false);
   const lastManualSaveAtRef = useRef<number>(0);
+  const versionsPanelRef = useRef<HTMLDivElement | null>(null);
+  const historyButtonRef = useRef<HTMLButtonElement | null>(null);
+  // Subtle click-feedback states for header buttons
+  type PressKey = 'code' | 'history' | 'commit'
+  const [pressed, setPressed] = useState<{ code: boolean; history: boolean; commit: boolean }>({ code: false, history: false, commit: false });
+  const flashPress = (key: PressKey) => {
+    setPressed((p) => ({ ...p, [key]: true }));
+    setTimeout(() => setPressed((p) => ({ ...p, [key]: false })), 140);
+  };
 
   // Observe store workflow for dirty tracking
   const workflowSnapshot = useWorkflowStore((s) => s.workflow);
@@ -121,8 +134,21 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
     if (!workflowId) return;
     try {
       const list = await listVersions(workflowId);
-      if (list && list.length) {
-        const sorted = [...list].sort((a, b) => {
+      console.log('All versions from API:', list);
+      // Only consider explicit commits (exclude autosaves/restores)
+      const explicit = (list || []).filter(v => {
+        const lbl = (v.label || v.name || '').trim();
+        console.log('Filtering version:', { id: v.id, label: v.label, name: v.name, lbl });
+        if (!lbl) return false;
+        const lower = lbl.toLowerCase();
+        if (lower.startsWith('revert')) return false;
+        if (lower.includes('auto') && lower.includes('save')) return false; // handles 'autosave', 'auto-save', 'auto save'
+        // Accept commits that have a label/name (explicit commits)
+        return true;
+      });
+      console.log('Filtered explicit commits:', explicit);
+      if (explicit && explicit.length) {
+        const sorted = [...explicit].sort((a, b) => {
           const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
           const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
           return tb - ta;
@@ -134,45 +160,64 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
     } catch {}
   }
 
-  // Initial hydration (runs once per workflowId)
+  // Initial hydration (runs once per workflowId) with id-stability and working-copy validation
   useEffect(() => {
     if (!workflowId) return;
+    let cancelled = false;
+    const myId = workflowId;
+    // If the store already contains the requested workflow, render it immediately (zero delay)
+    if (workflowSnapshot?.id === myId) {
+      setHydrating(false);
+      refreshLatestVersion();
+      return;
+    }
+    setHydrating(true);
     (async () => {
       try {
-        const working = await apiGetWorkingCopy(workflowId);
-        if (working?.graph) {
-          const hydrated = fromExecutionSpec(working.graph as any);
+        const working = await apiGetWorkingCopy(myId);
+        if (!cancelled && working?.graph && (!working?.workflowId || working.workflowId === myId)) {
+          const g = working.graph as any;
+          const hydrated = (g && typeof g === 'object' && 'flow' in g)
+            ? fromExecutionSpec(g)
+            : (g?.nodes && g?.edges ? g : { id: myId, name: 'Untitled Workflow', nodes: [], edges: [] });
           // Try fetching workflow metadata to get name
           try {
-            const wfMeta = await getWorkflow(workflowId);
+            const wfMeta = await getWorkflow(myId);
             (hydrated as any).name = (wfMeta?.name as any) || (hydrated as any).name;
           } catch {}
+          if (cancelled) return;
           setWorkflow(hydrated as any);
           try {
             const h = computeGraphHash(hydrated);
             setLastSyncedHash(h);
             setLastSavedAt(Date.now());
           } catch {}
+          setHydrating(false);
           return;
         }
       } catch {}
       try {
-        const wf = await getWorkflow(workflowId);
+        const wf = await getWorkflow(myId);
+        if (cancelled) return;
         const spec = (wf?.graph as any) ?? null;
-        if (spec && typeof spec === 'object' && spec.nodes && spec.flow) {
-          const hydrated = fromExecutionSpec(spec as any);
-          setWorkflow(hydrated as any);
-          try {
-            const h = computeGraphHash(hydrated);
-            setLastSyncedHash(h);
-            setLastSavedAt(Date.now());
-          } catch {}
-        }
+        const hydrated = (spec && typeof spec === 'object')
+          ? (('flow' in spec) ? fromExecutionSpec(spec as any)
+             : (spec.nodes && spec.edges ? spec : { id: myId, name: wf?.name || 'Untitled Workflow', nodes: [], edges: [] }))
+          : { id: myId, name: wf?.name || 'Untitled Workflow', nodes: [], edges: [] };
+        setWorkflow(hydrated as any);
+        try {
+          const h = computeGraphHash(hydrated);
+          setLastSyncedHash(h);
+          setLastSavedAt(Date.now());
+        } catch {}
+        setHydrating(false);
       } catch (e) {
-        console.warn('Initial hydration failed', e);
+        if (!cancelled) console.warn('Initial hydration failed', e);
+        setHydrating(false);
       }
     })();
     refreshLatestVersion();
+    return () => { cancelled = true; };
   }, [workflowId]);
 
   // Debounced working-copy sync (reacts to graph changes). No auto-commit.
@@ -202,7 +247,7 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
     return () => clearTimeout(timeout);
   }, [workflowId, workflowHash, autosaveEnabled]);
 
-  async function commitNow() {
+  async function commitNow(name?: string, description?: string) {
     if (!workflowId) return;
     try {
       setIsSaving(true);
@@ -212,13 +257,40 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
       const valid = validateExecutionSpec(spec);
       if (!valid.ok) {
         console.warn('Validation failed, commit skipped', valid.errors);
+        setIsSaving(false);
         return;
       }
-      await apiCommit(workflowId, undefined);
+      // Ensure server working copy matches the current snapshot (covers when Autosave is off)
+      try {
+        await apiUpdateWorkingCopy(workflowId, spec);
+      } catch {}
+      // Commit with name and description
+      console.log('Committing with name:', name, 'description:', description);
+      await apiCommit(workflowId, name, description);
+      console.log('Commit successful');
       await refreshLatestVersion();
+      // If history panel is open, refresh its list so the new commit appears immediately
+      if (versionsOpen) {
+        try {
+          const list = await listVersions(workflowId);
+          console.log('Refreshing history panel, all versions:', list);
+          const explicit = (list || []).filter(v => {
+            const lbl = (v.label || v.name || '').trim();
+            console.log('History panel filter:', { id: v.id, label: v.label, name: v.name, lbl });
+            if (!lbl) return false;
+            const lower = lbl.toLowerCase();
+            if (lower.startsWith('revert')) return false;
+            if (lower.includes('auto') && lower.includes('save')) return false;
+            // Accept commits that have a label/name (explicit commits)
+            return true;
+          });
+          console.log('History panel explicit commits:', explicit);
+          setVersions(explicit);
+        } catch {}
+      }
       // Committing doesn't change working copy hash; status stays based on autosave
     } catch (e) {
-      console.warn('Commit failed', e);
+      console.error('Commit failed', e);
     } finally {
       setIsSaving(false);
     }
@@ -228,7 +300,17 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
     if (!workflowId) return;
     try {
       const list = await listVersions(workflowId);
-      setVersions(list);
+      // Only show explicit/manual commits (exclude autosave and restore entries)
+      const explicit = (list || []).filter(v => {
+        const lbl = (v.label || v.name || '').trim();
+        if (!lbl) return false;
+        const lower = lbl.toLowerCase();
+        if (lower.startsWith('revert')) return false;
+        if (lower.includes('auto') && lower.includes('save')) return false;
+        // Accept commits that have a label/name (explicit commits)
+        return true;
+      });
+      setVersions(explicit);
       setVersionsOpen(true);
     } catch (e) {
       console.warn('Failed to load versions', e);
@@ -256,15 +338,58 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
     }
   }
 
+  async function handleDeleteVersion(versionId: string) {
+    if (!workflowId) return;
+    const ok = window.confirm('Delete this version? This cannot be undone.');
+    if (!ok) return;
+    try {
+      const { deleteVersion } = await import('@/lib/workflows.client');
+      await deleteVersion(workflowId, versionId);
+      await refreshLatestVersion();
+      // refresh panel list with filter
+      try {
+        const list = await listVersions(workflowId);
+        const explicit = (list || []).filter(v => {
+          const lbl = (v.label || v.name || '').trim();
+          if (!lbl) return false;
+          const lower = lbl.toLowerCase();
+          if (lower.startsWith('revert')) return false;
+          if (lower.includes('auto') && lower.includes('save')) return false;
+          // Accept commits that have a label/name (explicit commits)
+          return true;
+        });
+        setVersions(explicit);
+      } catch {}
+    } catch (e) {
+      console.warn('Delete version failed', e);
+    }
+  }
+
+
   // Handle ESC key to dismiss panels
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore hotkeys when typing in inputs/textareas/selects or contenteditable fields
+      const target = (e.target as HTMLElement) || null;
+      const tag = (target?.tagName || '').toLowerCase();
+      const isEditable = !!(
+        target && (
+          (target as HTMLElement).isContentEditable ||
+          tag === 'input' ||
+          tag === 'textarea' ||
+          tag === 'select' ||
+          // editors/textboxes
+          target.closest?.('[contenteditable="true"], [role="textbox"], .cm-editor, .CodeMirror')
+        )
+      );
+      if (isEditable) return;
       if (e.key === 'Escape') {
         setShowCommandPalette(false);
         setSelectedNode(null);
         setShowPropertiesPanel(false);
         setSelectedTool('cursor');
         setPendingConnectorFrom(null);
+        setVersionsOpen(false);
       }
       // Toggle connector tool with C
       if (!e.metaKey && !e.ctrlKey && e.key.toLowerCase() === 'c') {
@@ -281,15 +406,44 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
         e.preventDefault();
         setSelectedTool((t) => (t === 'split' ? 'cursor' : 'split'));
       }
+      // Group selected nodes with G
+      if (!e.metaKey && !e.ctrlKey && e.key.toLowerCase() === 'g') {
+        e.preventDefault();
+        const selectedNodeIds = Array.from(workflowSnapshot.nodes.filter(n => n.selected).map(n => n.id));
+        if (selectedNodeIds.length >= 2) {
+          const groupNodes = useWorkflowStore.getState().groupNodes;
+          groupNodes(selectedNodeIds);
+        }
+      }
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Show properties panel when node is selected via selection change (keyboard/marquee)
+  // Close versions panel on outside click
   useEffect(() => {
-    setShowPropertiesPanel(!!selectedNode);
+    if (!versionsOpen) return;
+    const onDown = (e: MouseEvent) => {
+      const panel = versionsPanelRef.current;
+      const button = historyButtonRef.current;
+      if (!panel) return;
+      
+      const target = e.target as HTMLElement;
+      // Don't close if clicking inside the panel or on the History button
+      if (panel.contains(target) || (button && button.contains(target))) {
+        return;
+      }
+      
+      setVersionsOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [versionsOpen]);
+
+  // Only close properties panel when selection clears; do not auto-open on single selection
+  useEffect(() => {
+    if (!selectedNode) setShowPropertiesPanel(false);
   }, [selectedNode]);
 
   const handleAddNode = () => {
@@ -308,21 +462,6 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
     }
   };
 
-  if (!workflowId) {
-    return (
-      <div className="h-screen flex flex-col items-center justify-center gap-4">
-        <p className="text-sm text-muted-foreground">No workflow selected. Return to list to pick or create one.</p>
-        <Button onClick={() => { onBack(); router.push('/workflows'); }}>
-          Back to Workflows
-        </Button>
-      </div>
-    );
-  }
-
-  if (isCodeView) {
-    return <WorkflowCodeEditor onToggleView={onToggleCodeView} />;
-  }
-
   const relativeTime = useMemo(() => {
     if (!lastSavedAt) return 'Not saved yet';
     const diff = Date.now() - lastSavedAt;
@@ -335,6 +474,17 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
     const day = Math.floor(hr / 24);
     return `Saved ${day}d ago`;
   }, [lastSavedAt]);
+
+  if (!workflowId) {
+    return (
+      <div className="h-screen flex flex-col items-center justify-center gap-4">
+        <p className="text-sm text-muted-foreground">No workflow selected. Return to list to pick or create one.</p>
+        <Button onClick={() => { onBack(); router.push('/workflows'); }}>
+          Back to Workflows
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen bg-background flex flex-col">
@@ -356,6 +506,7 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
             <input
               value={localName}
               onChange={(e) => onNameChange(e.target.value)}
+              onKeyDown={(e) => { e.stopPropagation(); }}
               className="bg-transparent border border-border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
               placeholder="Untitled Workflow"
             />
@@ -379,18 +530,40 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
           <Button
             variant={isCodeView ? "default" : "outline"}
             size="sm"
+            onMouseDown={() => flashPress('code')}
             onClick={onToggleCodeView}
+            className={`transition-colors duration-150 ${pressed.code ? 'bg-primary/10 border-primary/50 text-primary' : ''}`}
           >
             {isCodeView ? <Eye className="w-4 h-4 mr-2" /> : <Code2 className="w-4 h-4 mr-2" />}
             {isCodeView ? "Visual" : "Code"}
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setVersionsOpen(true)}>
+          <Button
+            ref={historyButtonRef}
+            variant="outline"
+            size="sm"
+            aria-pressed={versionsOpen}
+            onMouseDown={() => flashPress('history')}
+            onClick={() => {
+              if (versionsOpen) {
+                setVersionsOpen(false);
+              } else {
+                openVersions();
+              }
+            }}
+            className={`transition-colors duration-150 ${versionsOpen ? 'bg-blue-500/80 hover:bg-blue-500 text-white border-transparent' : ''} ${!versionsOpen && pressed.history ? 'bg-primary/10 border-primary/50 text-primary' : ''}`}
+          >
             History
           </Button>
-          <Button variant="outline" size="sm" onClick={() => commitNow()}>
+          <Button
+            variant="outline"
+            size="sm"
+            onMouseDown={() => flashPress('commit')}
+            onClick={() => setShowCommitDialog(true)}
+            className={`transition-colors duration-150 ${pressed.commit ? 'bg-primary/10 border-primary/50 text-primary' : ''}`}
+          >
             Commit
           </Button>
-          <Button size="sm">
+          <Button size="sm" className="bg-emerald-500/80 hover:bg-emerald-500 text-white border-transparent">
             <Play className="w-4 h-4 mr-2" />
             Run Workflow
           </Button>
@@ -399,6 +572,15 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
 
       {/* Full-Screen Canvas */}
       <div className="flex-1 relative overflow-hidden">
+        {hydrating ? (
+          <div className="absolute inset-0 grid place-items-center bg-background/60 backdrop-blur-[1px] z-30">
+            <div className="flex items-center gap-3 text-sm text-muted-foreground">
+              <span className="inline-block w-3 h-3 rounded-full bg-primary animate-pulse" />
+              Loading workflow…
+            </div>
+          </div>
+        ) : null}
+        {!hydrating && (
         <ReactFlowCanvas 
           mode={selectedTool === 'hand' ? 'pan' : 'select'}
           tool={selectedTool}
@@ -413,14 +595,14 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
               }
               return; // do not toggle properties during connector mode
             }
-            // Toggle: clicking the same node closes the panel; clicking any node opens
-            if (selectedNode && node.id === selectedNode.id && showPropertiesPanel) {
-              setShowPropertiesPanel(false);
-              setSelectedNode(null);
-            } else {
-              setSelectedNode(node);
-              setShowPropertiesPanel(true);
-            }
+            // Single-click: select only, do not open properties
+            setSelectedNode(node);
+          }}
+          onNodeDoubleClick={(node) => {
+            // Double-click: open properties for the node (unless in connector mode)
+            if (selectedTool === 'connector') return;
+            setSelectedNode(node);
+            setShowPropertiesPanel(true);
           }}
           onPaneClick={(pos) => {
             // In text mode, click to add a text node at cursor
@@ -470,11 +652,33 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
             setFlowApi({ zoomIn, zoomOut, fitView, toggleMinimap, toggleGrid, updateNodeData, addEdge });
           }}
         />
+        )}
         
         {/* Floating Toolbar */}
+        {!hydrating && (
         <WorkflowToolbar
           selectedTool={selectedTool}
           onToolSelect={(tool) => {
+            // Handle group button - instant action, not a toggle tool
+            if (tool === 'group') {
+              const selectedNodeIds = Array.from(workflowSnapshot.nodes.filter(n => n.selected).map(n => n.id));
+              if (selectedNodeIds.length >= 2) {
+                const { groupNodes } = useWorkflowStore.getState();
+                const groupId = groupNodes(selectedNodeIds);
+                if (groupId) {
+                  // Select the new group
+                  setTimeout(() => {
+                    const { selectNodes } = useWorkflowStore.getState();
+                    selectNodes([groupId]);
+                  }, 50);
+                }
+              } else {
+                console.log('Please select 2 or more nodes to group');
+              }
+              // Don't change the selected tool - group is an action, not a mode
+              return;
+            }
+            
             setSelectedTool(tool);
             // Quick actions: open palette or invoke flow controls for special IDs
             if (tool === 'codie') {
@@ -482,9 +686,10 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
             }
           }}
         />
+        )}
 
         {/* Command Palette Modal */}
-        {showCommandPalette && (
+        {!hydrating && showCommandPalette && (
           <CommandPalette
             onClose={() => setShowCommandPalette(false)}
             onNodeCreated={handleNodeCreated}
@@ -492,6 +697,7 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
         )}
 
         {/* Contextual Properties Panel */}
+        {!hydrating && (
         <PropertiesPanel 
           selectedNode={selectedNode} 
           isVisible={showPropertiesPanel}
@@ -501,8 +707,10 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
           }}
           onApply={applyProperties}
         />
+        )}
 
         {/* Bottom-left Zoom Controls */}
+        {!hydrating && (
         <div
           className="absolute left-4 bottom-4 z-20 flex items-center gap-1.5 bg-background/95 backdrop-blur-sm border border-border/50 rounded-xl shadow-lg p-1.5"
           onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
@@ -543,22 +751,42 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
             <span className="text-2xl leading-none">+</span>
           </Button>
         </div>
+        )}
       </div>
       {versionsOpen && (
-        <div className="absolute right-4 top-16 z-50 w-96 max-h-[60vh] overflow-auto rounded-lg border border-border bg-card shadow-xl">
+        <div ref={versionsPanelRef} className="absolute right-4 top-16 z-50 w-96 max-h-[60vh] overflow-auto rounded-lg border border-border bg-card shadow-xl">
           <div className="flex items-center justify-between px-4 py-2 border-b border-border/50">
             <div className="font-semibold">Versions</div>
-            <button className="text-sm text-muted-foreground" onClick={() => setVersionsOpen(false)}>Close</button>
+            <button
+              aria-label="Close versions"
+              onClick={() => setVersionsOpen(false)}
+              className="h-5 w-5 rounded-full flex items-center justify-center group"
+              title="Close"
+            >
+              <span className="relative block h-4 w-4 rounded-full bg-red-500/80 group-hover:bg-red-500">
+                <span className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 text-[12px] font-extrabold text-red-950">×</span>
+              </span>
+            </button>
           </div>
           <div className="divide-y divide-border/50">
             {(versions ?? []).map(v => (
               <div key={v.id} className="px-4 py-3 flex items-center justify-between">
-                <div className="text-sm">
-                  <div className="font-medium">{v.label || `Version ${v.id.slice(0, 6)}`}</div>
-                  <div className="text-xs text-muted-foreground">{v.createdAt ? new Date(v.createdAt).toLocaleString() : ''}</div>
+                <div className="text-sm flex-1 min-w-0 mr-4">
+                  <div className="font-medium truncate" title={v.label || v.name || `Version ${v.id.slice(0, 6)}`}>
+                    {v.label || v.name || `Version ${v.id.slice(0, 6)}`}
+                  </div>
+                  {v.description && (
+                    <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2" title={v.description}>
+                      {v.description}
+                    </div>
+                  )}
+                  <div className="text-xs text-muted-foreground mt-0.5">{v.createdAt ? new Date(v.createdAt).toLocaleString() : ''}</div>
                 </div>
-                <div className="flex gap-2">
-                  <Button size="sm" variant="outline" onClick={() => handleRestore(v.id)}>Restore</Button>
+                <div className="flex gap-2 flex-shrink-0">
+                  <Button size="sm" variant="outline" className="min-w-[96px]" onClick={() => handleRestore(v.id)}>Restore</Button>
+                  <Button size="sm" className="min-w-[96px] bg-red-500/80 hover:bg-red-500 text-white border-transparent" onClick={() => handleDeleteVersion(v.id)}>
+                    <Trash2 className="w-4 h-4 mr-1" /> Delete
+                  </Button>
                 </div>
               </div>
             ))}
@@ -568,6 +796,17 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
           </div>
         </div>
       )}
+
+      {/* Commit Dialog */}
+      <CommitDialog
+        isOpen={showCommitDialog}
+        onClose={() => setShowCommitDialog(false)}
+        onCommit={async (name, description) => {
+          await commitNow(name, description);
+          setShowCommitDialog(false);
+        }}
+        isSaving={isSaving}
+      />
     </div>
   );
 }

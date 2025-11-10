@@ -183,6 +183,22 @@ export async function restoreVersion(workflowId: string, versionId: string): Pro
   return res.json()
 }
 
+export async function deleteVersion(workflowId: string, versionId: string): Promise<{ deleted: boolean }>{
+  const token = await getAccessToken()
+  const headers: Record<string, string> = {}
+  if (token) headers.Authorization = `Bearer ${token}`
+  const proxyUrl = `${BROWSER_PROXY_BASE}/workflows/${workflowId}/versions/${versionId}`
+  const directUrl = `${API_BASE_URL}/workflows/${workflowId}/versions/${versionId}`
+  const url = isBrowser ? proxyUrl : directUrl
+  const res = await fetch(url, { method: 'DELETE', headers, credentials: 'include', cache: 'no-store' })
+  if (!res.ok) {
+    const res2 = await fetch(directUrl, { method: 'DELETE', headers, credentials: 'include', cache: 'no-store' })
+    if (!res2.ok) throw new Error(`Failed to delete version: ${res2.status} ${res2.statusText}`)
+    return res2.json()
+  }
+  return res.json()
+}
+
 export async function updateWorkflow(id: string, patch: Partial<Workflow>): Promise<Workflow> {
   const token = await getAccessToken()
   const headers: Record<string, string> = { 'content-type': 'application/json' }
@@ -195,6 +211,22 @@ export async function updateWorkflow(id: string, patch: Partial<Workflow>): Prom
   if (!res.ok) {
     const res2 = await fetch(directUrl, { method: 'PUT', headers, body, credentials: 'include', cache: 'no-store' })
     if (!res2.ok) throw new Error(`Failed to update workflow: ${res2.status} ${res2.statusText}`)
+    return res2.json()
+  }
+  return res.json()
+}
+
+export async function deleteWorkflow(id: string): Promise<{ deleted: boolean }> {
+  const token = await getAccessToken()
+  const headers: Record<string, string> = { 'content-type': 'application/json' }
+  if (token) headers.Authorization = `Bearer ${token}`
+  const proxyUrl = `${BROWSER_PROXY_BASE}/workflows/${id}`
+  const directUrl = `${API_BASE_URL}/workflows/${id}`
+  const url = isBrowser ? proxyUrl : directUrl
+  const res = await fetch(url, { method: 'DELETE', headers, credentials: 'include', cache: 'no-store' })
+  if (!res.ok) {
+    const res2 = await fetch(directUrl, { method: 'DELETE', headers, credentials: 'include', cache: 'no-store' })
+    if (!res2.ok) throw new Error(`Failed to delete workflow: ${res2.status} ${res2.statusText}`)
     return res2.json()
   }
   return res.json()
@@ -301,11 +333,11 @@ export async function maybeCommit(workflowId: string, opts?: { minIntervalSec?: 
   return res.json();
 }
 
-export async function commit(workflowId: string, message?: string): Promise<{ id: string; versionNumber?: number }>{
+export async function commit(workflowId: string, name?: string, description?: string): Promise<{ id: string; versionNumber?: number }>{
   const token = await getAccessToken();
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
-  const body = JSON.stringify({ message });
+  const body = JSON.stringify({ name, description });
   const proxyUrl = `${BROWSER_PROXY_BASE}/workflows/${workflowId}/commit`;
   const directUrl = `${API_BASE_URL}/workflows/${workflowId}/commit`;
   const url = isBrowser ? proxyUrl : directUrl;

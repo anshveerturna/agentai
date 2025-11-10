@@ -66,12 +66,32 @@ export class WorkflowsService {
     });
   }
 
+  async remove(id: string): Promise<{ deleted: boolean }> {
+    // Delete all related versions and working copies first (cascade)
+    await prisma.workflowVersion.deleteMany({ where: { workflowId: id } });
+    await prisma.workflowWorkingState.deleteMany({ where: { workflowId: id } });
+    await prisma.workflowRun.deleteMany({ where: { workflowId: id } });
+    await prisma.workflow.delete({ where: { id } });
+    return { deleted: true };
+  }
+  
+
   // --- Versions (legacy-style snapshot APIs; kept for compatibility) ---
   async listVersions(workflowId: string): Promise<Array<Pick<WorkflowVersionModel,'id'|'createdAt'|'label'>>> {
-    return prisma.workflowVersion.findMany({
-      where: { workflowId },
+    // Return explicit commits (exclude autosave and restore entries)
+    // @ts-ignore - name and description fields available post-migration
+    return (prisma as any).workflowVersion.findMany({
+      where: {
+        workflowId,
+        // Exclude autosave and restore entries
+        NOT: [
+          { label: { contains: 'autosave', mode: 'insensitive' } },
+          { label: { contains: 'auto-save', mode: 'insensitive' } },
+          { label: { startsWith: 'Revert', mode: 'insensitive' } },
+        ],
+      },
       orderBy: { createdAt: 'desc' },
-      select: { id: true, createdAt: true, label: true }
+      select: { id: true, createdAt: true, label: true, name: true, description: true, versionNumber: true, semanticHash: true }
     });
   }
   async createVersion(workflowId: string, label?: string): Promise<{ id: string } | undefined> {
@@ -134,6 +154,20 @@ export class WorkflowsService {
     // @ts-ignore - activeVersionId exists post-migration
     await (prisma as any).workflow.update({ where: { id: workflowId }, data: { graph: v.graph as any, activeVersionId: rec.id } });
     return { restored: rec.id };
+  }
+
+  async deleteVersion(workflowId: string, versionId: string): Promise<{ deleted: boolean } | undefined> {
+    const v = await prisma.workflowVersion.findUnique({ where: { id: versionId } });
+    if (!v || v.workflowId !== workflowId) return undefined;
+    const wf = await this.findOne(workflowId);
+    if (!wf) return undefined;
+    // If this version is active, clear the pointer first
+    if ((wf as any).activeVersionId === versionId) {
+      // @ts-ignore - activeVersionId exists post-migration
+      await (prisma as any).workflow.update({ where: { id: workflowId }, data: { activeVersionId: null } });
+    }
+    await prisma.workflowVersion.delete({ where: { id: versionId } });
+    return { deleted: true };
   }
 
   // Run history
@@ -243,6 +277,10 @@ export class WorkflowsService {
   }
 
   async maybeCommit(workflowId: string, opts?: { minIntervalSec?: number; threshold?: number }): Promise<{ committed: boolean; versionId?: string; summary?: string }> {
+    // Feature flag: disable backend auto-commits unless explicitly enabled
+    if (process.env.WORKFLOW_AUTOCOMMIT_ENABLED !== 'true') {
+      return { committed: false };
+    }
     const { minIntervalSec = 120, threshold = 5 } = opts || {};
     const wf = await this.findOne(workflowId);
     if (!wf) return { committed: false };
@@ -285,7 +323,7 @@ export class WorkflowsService {
     return { committed: true, versionId: rec.id, summary };
   }
 
-  async commitExplicit(workflowId: string, message?: string): Promise<{ id: string }> {
+  async commitExplicit(workflowId: string, name?: string, description?: string): Promise<{ id: string }> {
     const wf = await this.findOne(workflowId);
     if (!wf) throw new Error('workflow not found');
   // @ts-ignore - model exists post-migration
@@ -300,13 +338,13 @@ export class WorkflowsService {
     const rec = await (prisma as any).workflowVersion.create({
       data: {
         workflowId,
-        label: message,
-        name: wf.name,
-        description: wf.description ?? undefined,
+        label: name,
+        name: name ?? wf.name,
+        description: description ?? wf.description ?? undefined,
         graph,
         versionNumber,
         semanticHash: hash,
-        diffSummary: message,
+        diffSummary: description,
         // @ts-ignore
         branch: (wf as any).defaultBranch ?? 'main',
       }

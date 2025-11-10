@@ -67,9 +67,21 @@ export function ActionNode(props: any) {
   return (
     <div
       className={
-        "group relative border shadow-sm transition-all bg-white border-gray-200 dark:bg-neutral-900 dark:border-neutral-700 " +
-        `border-l-2 ${typeStyle.borderColor} ` +
-        (selected ? "ring-1 ring-blue-400/50 dark:ring-blue-500/30" : "")
+        (
+          "group relative transition-all bg-white dark:bg-neutral-900 " +
+          // Selected: tight effect border with no added margin
+          (selected
+            ? [
+                "border border-gray-300 dark:border-neutral-600", // structural border
+                // brand primary inner stroke (toolbar selected button color #1F6FEB)
+                "shadow-[inset_0_0_0_1px_rgba(31,111,235,0.9)]",
+                // micro halo with brand primary subtle transparency
+                "after:content-[''] after:absolute after:-inset-[0.5px] after:rounded-[inherit] after:ring-1 after:ring-[rgba(31,111,235,0.28)] after:pointer-events-none"
+              ].join(" ")
+            : "border border-gray-200 dark:border-neutral-700 shadow-sm ") +
+          // Keep the type accent on the left edge
+          ` border-l-2 ${typeStyle.borderColor} `
+        )
       }
       style={{ borderRadius: '8px' }}
     >

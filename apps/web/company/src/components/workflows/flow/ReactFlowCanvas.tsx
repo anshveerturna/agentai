@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import { useWorkflowStore } from '@/store/workflowStore';
 import type { NodeModel, Port } from '@/types/workflow';
 import ActionNode, { type ActionNodeData } from './nodes/ActionNode';
+import { GroupNode } from './nodes/GroupNode';
 import { ActionLibrary } from '@/components/workflows/ActionLibrary';
 
 export type AddNodeFn = (type: string, initial?: Partial<Node>) => string;
@@ -26,6 +27,7 @@ export type AddNodeFn = (type: string, initial?: Partial<Node>) => string;
 export interface ReactFlowCanvasProps {
   onNodeSelect?: (node: Node | null) => void;
   onNodeClick?: (node: Node) => void;
+  onNodeDoubleClick?: (node: Node) => void;
   onPaneClick?: (pos: { x: number; y: number }) => void;
   onAddNodeRequest?: () => void;
   // current tool id to allow contextual interactions (e.g., split insertion on edge click)
@@ -49,14 +51,17 @@ export interface ReactFlowCanvasProps {
   initialGrid?: boolean;
 }
 
-export default function ReactFlowCanvas({ onNodeSelect, onNodeClick, onPaneClick, onAddNodeRequest, onReady, tool, mode = 'select', initialMinimap = true, initialGrid = true, onSplitEdge }: ReactFlowCanvasProps) {
+export default function ReactFlowCanvas({ onNodeSelect, onNodeClick, onNodeDoubleClick, onPaneClick, onAddNodeRequest, onReady, tool, mode = 'select', initialMinimap = true, initialGrid = true, onSplitEdge }: ReactFlowCanvasProps) {
   // Local rf helpers
   const [rfSelection, setRfSelection] = useState<string | null>(null);
   const [instance, setInstance] = useState<ReactFlowInstance<any, any> | null>(null);
   const [showMinimap, setShowMinimap] = useState(initialMinimap);
   const [showGrid, setShowGrid] = useState(initialGrid);
   const [ignoreNextSelection, setIgnoreNextSelection] = useState(false);
-  const nodeTypes: NodeTypes = useMemo(() => ({ action: ActionNode as any }), []);
+  const nodeTypes: NodeTypes = useMemo(() => ({ 
+    action: ActionNode as any,
+    group: GroupNode as any
+  }), []);
 
   // Store bindings
   const {
@@ -85,24 +90,33 @@ export default function ReactFlowCanvas({ onNodeSelect, onNodeClick, onPaneClick
     clearSelection: s.clearSelection,
   }));
   const selectedEdgeIds = useWorkflowStore((s) => s.selection.edges);
+  const selectedNodeIds = useWorkflowStore((s) => s.selection.nodes);
 
   // nodes/edges mapping
   const rfNodes = useMemo<Node[]>(() => (
-    workflow.nodes.map((n: NodeModel) => ({
-      id: n.id,
-      type: 'action',
-      position: { x: n.position.x, y: n.position.y },
-      data: { 
-        label: n.label, 
-        kind: n.kind, 
-        config: n.config,
-        nodeType: (n as any)?.config?.nodeType || 'action',
-        ports: n.ports,
-      } as any,
-      selected: !!n.selected,
-      width: n.size?.width,
-      height: n.size?.height,
-    }))
+    workflow.nodes.map((n: NodeModel) => {
+      const nodeType = (n as any)?.config?.nodeType || 'action';
+      const isGroup = nodeType === 'group';
+      return {
+        id: n.id,
+        type: isGroup ? 'group' : 'action',
+        position: { x: n.position.x, y: n.position.y },
+        data: {
+          label: n.label,
+          kind: n.kind,
+          config: n.config,
+          nodeType,
+          ports: n.ports,
+          childCount: (n.config as any)?.childCount,
+          childIds: (n.config as any)?.childIds,
+        } as any,
+        selected: !!n.selected,
+        width: n.size?.width,
+        height: n.size?.height,
+        // No parentNode/extent: children remain independent; group is purely visual frame
+        style: isGroup ? { zIndex: 0 } : undefined,
+      };
+    })
   ), [workflow.nodes]);
 
   const rfEdges = useMemo<Edge[]>(() =>
@@ -144,6 +158,7 @@ export default function ReactFlowCanvas({ onNodeSelect, onNodeClick, onPaneClick
       storeAddEdge({ from: { nodeId: fromNode.id, portId: fromPort }, to: { nodeId: toNode.id, portId: toPort }, kind: 'control' });
     }
   }, [workflow.nodes, storeAddEdge]);
+
 
   // add node via store
   const addNode: AddNodeFn = useCallback((type: string, initial?: Partial<Node>) => {
@@ -197,11 +212,14 @@ export default function ReactFlowCanvas({ onNodeSelect, onNodeClick, onPaneClick
     }
     const node = nodes[0] ?? null;
     setRfSelection(node?.id ?? null);
-    if (node) {
-      selectNodes([node.id]);
+    
+    // Support multi-selection: sync all selected nodes to store
+    if (nodes && nodes.length > 0) {
+      selectNodes(nodes.map(n => n.id));
     } else {
       selectNodes([]);
     }
+    
     if (edges && edges.length) {
       // sync selected edges to store
       selectEdges(edges.map((e) => e.id as string));
@@ -227,11 +245,62 @@ export default function ReactFlowCanvas({ onNodeSelect, onNodeClick, onPaneClick
       }
       if (ch.type === 'remove') removed.push(ch.id);
     }
+
     if (positionChanges.length) {
-      positionChanges.forEach(({ id, dx, dy }) => moveNodes([id], dx, dy, 1));
+      // Apply movements
+      positionChanges.forEach(({ id, dx, dy }) => {
+        const node = workflow.nodes.find((x) => x.id === id) as any;
+        const isGroup = node && node.config?.nodeType === 'group';
+        moveNodes([id], dx, dy, 1);
+        if (isGroup) {
+          const childIds: string[] = node.config?.childIds || [];
+          if (childIds.length) moveNodes(childIds, dx, dy, 1);
+        }
+      });
+
+      // Recompute bounds for any affected groups (groups moved or groups containing moved children)
+      const movedIds = new Set(positionChanges.map((p) => p.id));
+      const overridePos = new Map<string, { x: number; y: number }>();
+      positionChanges.forEach(({ id, dx, dy }) => {
+        const n = workflow.nodes.find((x) => x.id === id);
+        if (!n) return;
+        overridePos.set(id, { x: n.position.x + dx, y: n.position.y + dy });
+      });
+
+      const groups = workflow.nodes.filter((n: any) => n.config?.nodeType === 'group');
+      groups.forEach((g: any) => {
+        const childIds: string[] = g.config?.childIds || [];
+        const groupMoved = movedIds.has(g.id);
+        const anyChildMoved = childIds.some((cid) => movedIds.has(cid));
+        if (!groupMoved && !anyChildMoved) return;
+        if (childIds.length === 0) return;
+
+        const padding = g.config?.padding || { top: 40, right: 24, bottom: 32, left: 24 };
+        // Compute bounds using overrides when available
+        const childNodes = childIds
+          .map((cid) => workflow.nodes.find((n) => n.id === cid))
+          .filter(Boolean) as any[];
+        if (!childNodes.length) return;
+        const minX = Math.min(
+          ...childNodes.map((n) => (overridePos.get(n.id)?.x ?? n.position.x))
+        ) - padding.left;
+        const minY = Math.min(
+          ...childNodes.map((n) => (overridePos.get(n.id)?.y ?? n.position.y))
+        ) - padding.top;
+        const maxX = Math.max(
+          ...childNodes.map((n) => (overridePos.get(n.id)?.x ?? n.position.x) + (n.size?.width || 220))
+        ) + padding.right;
+        const maxY = Math.max(
+          ...childNodes.map((n) => (overridePos.get(n.id)?.y ?? n.position.y) + (n.size?.height || 100))
+        ) + padding.bottom;
+        const width = maxX - minX;
+        const height = maxY - minY;
+        updateNode(g.id, { position: { x: minX, y: minY }, size: { width, height } } as any);
+      });
     }
+
     if (removed.length) removeNodes(removed);
-  }, [workflow.nodes, moveNodes, removeNodes]);
+  }, [workflow.nodes, moveNodes, removeNodes, updateNode]);
 
   const onEdgesChange = useCallback((changes: any[]) => {
     const removed = changes.filter((c) => c.type === 'remove').map((c) => c.id).filter(Boolean);
@@ -329,6 +398,8 @@ export default function ReactFlowCanvas({ onNodeSelect, onNodeClick, onPaneClick
         onConnect={onConnect}
         onSelectionChange={onSelectionChange}
         onPaneClick={(e) => {
+          // Clicking on empty canvas should clear selection
+          try { clearSelection(); } catch {}
           onNodeSelect?.(null);
           try {
             const ev = e as unknown as { clientX: number; clientY: number };
@@ -346,10 +417,44 @@ export default function ReactFlowCanvas({ onNodeSelect, onNodeClick, onPaneClick
           const y = (py - viewport.offset.y) / viewport.zoom;
           (typeof (onPaneClick) === 'function') && onPaneClick?.({ x, y });
         }}
-        onNodeClick={(_, node) => onNodeClick?.(node as Node)}
+        onNodeClick={(event, node) => {
+          // Allow ReactFlow's built-in multi-select when Cmd/Ctrl is pressed
+          const isMultiSelect = event.metaKey || event.ctrlKey;
+          if (isMultiSelect) {
+            // Let ReactFlow handle multi-select natively
+            onNodeClick?.(node as Node);
+            return;
+          }
+          
+          try {
+            const id = (node as Node).id as string;
+            const isAlreadySelected = selectedNodeIds?.has?.(id) ?? false;
+            if (isAlreadySelected) {
+              // Toggle off: if only this node selected, clear; else remove just this one
+              const size = selectedNodeIds?.size ?? 0;
+              if (size <= 1) {
+                clearSelection();
+              } else {
+                const rest = Array.from(selectedNodeIds).filter((x) => x !== id);
+                // replace selection with remaining nodes
+                selectNodes(rest, false);
+              }
+              // prevent React Flow selection handler from re-selecting
+              setIgnoreNextSelection(true);
+              event?.stopPropagation?.();
+              event?.preventDefault?.();
+              onNodeSelect?.(null);
+              return;
+            }
+          } catch {}
+          onNodeClick?.(node as Node);
+        }}
+  onNodeDoubleClick={(_, node) => onNodeDoubleClick?.(node as Node)}
         nodeTypes={nodeTypes}
         panOnDrag={mode === 'pan'}
         selectionOnDrag={mode === 'select'}
+        multiSelectionKeyCode="Meta" // Cmd on Mac, Ctrl on Windows
+        selectionKeyCode="Meta"
   proOptions={{ hideAttribution: true }}
   translateExtent={[[-100000, -100000], [100000, 100000]]}
   minZoom={0.1}
@@ -443,6 +548,7 @@ export default function ReactFlowCanvas({ onNodeSelect, onNodeClick, onPaneClick
           />
         )}
       </ReactFlow>
+
 
       {/* Empty State */}
       {rfNodes.length === 0 && (
