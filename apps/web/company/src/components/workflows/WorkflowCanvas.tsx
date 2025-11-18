@@ -61,6 +61,7 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
   // Observe store workflow for dirty tracking
   const workflowSnapshot = useWorkflowStore((s) => s.workflow);
   const setWorkflow = useWorkflowStore((s) => (s as any).setWorkflow as (wf: any) => void);
+  const recalculateGroupBounds = useWorkflowStore((s) => (s as any).recalculateGroupBounds as () => void);
   const updateNodeInStore = useWorkflowStore((s) => (s as any).updateNode as any);
   const [localName, setLocalName] = useState<string>(workflowSnapshot?.name || 'Untitled Workflow');
   useEffect(() => { setLocalName(workflowSnapshot?.name || 'Untitled Workflow'); }, [workflowSnapshot?.name]);
@@ -187,6 +188,7 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
           } catch {}
           if (cancelled) return;
           setWorkflow(hydrated as any);
+          recalculateGroupBounds();
           try {
             const h = computeGraphHash(hydrated);
             setLastSyncedHash(h);
@@ -205,6 +207,7 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
              : (spec.nodes && spec.edges ? spec : { id: myId, name: wf?.name || 'Untitled Workflow', nodes: [], edges: [] }))
           : { id: myId, name: wf?.name || 'Untitled Workflow', nodes: [], edges: [] };
         setWorkflow(hydrated as any);
+        recalculateGroupBounds();
         try {
           const h = computeGraphHash(hydrated);
           setLastSyncedHash(h);
@@ -327,6 +330,7 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
       if (spec && typeof spec === 'object' && spec.nodes && spec.flow) {
         const hydrated = fromExecutionSpec(spec as any);
         setWorkflow(hydrated as any);
+        recalculateGroupBounds();
         try {
           const h = computeGraphHash(hydrated);
           setLastSyncedHash(h);
@@ -667,10 +671,15 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
           onToolSelect={(tool) => {
             // Handle group button - instant action, not a toggle tool
             if (tool === 'group') {
-              const selIds = Array.from(useWorkflowStore.getState().selection.nodes);
-              const selectedNodeIds = selIds.length ? selIds : Array.from(workflowSnapshot.nodes.filter(n => n.selected).map(n => n.id));
+              const state = useWorkflowStore.getState();
+              const selIds = Array.from(state.selection.nodes);
+              const flaggedIds = Array.from(state.workflow.nodes.filter(n => n.selected).map(n => n.id));
+              const selectedNodeIds = selIds.length ? selIds : flaggedIds;
+              
+              console.log('[Group Debug] selection.nodes:', selIds.length, 'flagged:', flaggedIds.length, 'final:', selectedNodeIds.length);
+              
               if (selectedNodeIds.length >= 2) {
-                const { groupNodes, selectNodes } = useWorkflowStore.getState();
+                const { groupNodes, selectNodes } = state;
                 const groupId = groupNodes(selectedNodeIds);
                 if (groupId) {
                   // Select the new group immediately

@@ -42,16 +42,16 @@ function GroupFrameComponent(props: NodeProps) {
     <>
       {/* Floating header pill above the group */}
       <div
-        className="absolute -top-8 left-0 flex items-center gap-1 px-2 h-6 rounded-md border border-border/60 bg-background shadow-md pointer-events-auto z-10"
+        className="absolute -top-8 left-0 flex items-center gap-1 px-2 h-6 rounded-md border shadow-md pointer-events-auto z-10 bg-[#1F6FEB] border-[#1F6FEB] text-white dark:bg-background dark:border-border/60 dark:text-foreground"
         onMouseDown={(e) => { e.stopPropagation(); }}
         onClick={(e) => { e.stopPropagation(); }}
         onDoubleClick={(e) => { e.stopPropagation(); setValue(label); setEditing(true); }}
       >
-        <GroupIcon className="w-3.5 h-3.5 text-foreground/70" />
+        <GroupIcon className="w-3.5 h-3.5 text-white dark:text-foreground/70" />
         {!editing ? (
           <button
             type="button"
-            className="text-[12px] leading-none font-medium text-foreground/90 hover:text-foreground truncate max-w-[160px]"
+            className="text-[12px] leading-none font-medium text-white hover:text-white/90 dark:text-foreground/90 dark:hover:text-foreground truncate max-w-[160px]"
             onDoubleClick={() => { setValue(label); setEditing(true); }}
             onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => e.stopPropagation()}
@@ -84,19 +84,10 @@ function GroupFrameComponent(props: NodeProps) {
             onClick={(e) => { e.stopPropagation(); setValue(label); setEditing(true); }}
             onMouseDown={(e) => e.stopPropagation()}
           >
-            <Pencil className="w-3 h-3 text-foreground/60" />
+            <Pencil className="w-3 h-3 text-white dark:text-foreground/60" />
           </button>
         )}
       </div>
-
-      {/* Group frame (border-only, no fill) */}
-      <div
-        className={[
-          'relative w-full h-full rounded-xl border transition-colors',
-          selected ? 'border-blue-500 shadow-[0_0_0_2px_rgba(37,99,235,0.18)]' : 'border-border/50',
-          'bg-transparent',
-        ].join(' ')}
-      />
     </>
   );
 }

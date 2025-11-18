@@ -488,14 +488,14 @@ export default function ReactFlowCanvas({ onNodeSelect, onNodeClick, onNodeDoubl
         const hScreen = Math.abs(current.y - start.y);
         setDrawText(null);
         // Minimum viable outer size in screen pixels (what user draws)
-        const minOuterW = 120; const minOuterH = 40;
+        const minOuterW = 80; const minOuterH = 24;
         const zoom = instance?.getZoom?.() ?? viewport.zoom ?? 1;
         // Convert drawn outer dimensions to internal flow coordinate space by dividing by zoom
         const outerFlowW = Math.max(wScreen, minOuterW) / zoom;
         const outerFlowH = Math.max(hScreen, minOuterH) / zoom;
-        // Account for padding (horizontal 14*2, vertical 10*2) and border (2*2) applied in TextNode so the rectangle matches outer box
-        const horizontalExtra = 28 + 4; // padding + border
-        const verticalExtra = 20 + 4;   // padding + border
+        // Account for padding (horizontal 8*2, vertical 5*2) and border (1*2) applied in TextNode so the rectangle matches outer box
+        const horizontalExtra = 16 + 2; // padding + border
+        const verticalExtra = 10 + 2;   // padding + border
         const contentFlowW = Math.max(outerFlowW - horizontalExtra, 40); // ensure reasonable minimum content width
         const contentFlowH = Math.max(outerFlowH - verticalExtra, 20);   // ensure reasonable minimum content height
         // Convert top-left screen point to flow position

@@ -28,6 +28,7 @@ export type WorkflowStore = {
   moveNodes: (ids: UUID[], dx: number, dy: number, snap?: number) => void;
   removeNodes: (ids: UUID[]) => void;
   groupNodes: (ids: UUID[], options?: { label?: string; padding?: { top: number; right: number; bottom: number; left: number } }) => UUID | null;
+  recalculateGroupBounds: () => void;
   // Edge ops
   addEdge: (edge: { from: { nodeId: UUID; portId: UUID }; to: { nodeId: UUID; portId: UUID }; kind: Edge['kind'] }) => UUID;
   removeEdges: (ids: UUID[]) => void;
@@ -177,6 +178,33 @@ const creator: StateCreator<WorkflowStore, [["zustand/devtools", never]], [], Wo
       draft.workflow.updatedAt = Date.now();
     }));
     return groupId;
+  },
+
+  recalculateGroupBounds: () => {
+    set(produce<WorkflowStore>((draft) => {
+      const groups = draft.workflow.nodes.filter((n: any) => n.config?.nodeType === 'group');
+      
+      groups.forEach((g: any) => {
+        const childIds: string[] = Array.isArray(g.config?.childIds) ? g.config.childIds : [];
+        if (childIds.length < 2) return;
+        
+        const padding = g.config?.padding || { top: 48, right: 24, bottom: 32, left: 24 };
+        const childNodes = childIds
+          .map((cid) => draft.workflow.nodes.find((n) => n.id === cid))
+          .filter(Boolean) as any[];
+        
+        if (!childNodes.length) return;
+        
+        const minX = Math.min(...childNodes.map((n) => n.position.x)) - padding.left;
+        const minY = Math.min(...childNodes.map((n) => n.position.y)) - padding.top;
+        const maxX = Math.max(...childNodes.map((n) => n.position.x + (n.size?.width || 220))) + padding.right;
+        const maxY = Math.max(...childNodes.map((n) => n.position.y + (n.size?.height || 100))) + padding.bottom;
+        
+        g.position.x = minX;
+        g.position.y = minY;
+        g.size = { width: maxX - minX, height: maxY - minY };
+      });
+    }));
   },
 
   addEdge: (edge) => {
