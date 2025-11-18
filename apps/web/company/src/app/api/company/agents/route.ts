@@ -16,7 +16,7 @@ function getCookieFromHeader(req: NextRequest, name: string): string | undefined
 
 export async function GET(req: NextRequest) {
   try {
-    const apiBase = process.env.NEXT_PUBLIC_API_URL
+  const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002'
     if (!apiBase) {
       console.error('Proxy Error: NEXT_PUBLIC_API_URL is not set.');
       return NextResponse.json({ error: 'API endpoint is not configured' }, { status: 500 })
@@ -26,6 +26,10 @@ export async function GET(req: NextRequest) {
   const cookieStore = await cookies()
   const token = cookieStore.get('sb-access-token')?.value || req.cookies.get('sb-access-token')?.value || getCookieFromHeader(req, 'sb-access-token')
     const incomingAuth = req.headers.get('authorization')
+    
+    // DEBUG: Log what we found
+    console.log('[Agents GET] token from cookie:', token ? `${token.substring(0, 20)}...` : 'NONE')
+    console.log('[Agents GET] incomingAuth:', incomingAuth ? `${incomingAuth.substring(0, 30)}...` : 'NONE')
 
     const proxyHeaders = new Headers()
     // Prefer the existing Authorization header if present, otherwise use the cookie.
@@ -71,7 +75,7 @@ export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
   try {
-    const apiBase = process.env.NEXT_PUBLIC_API_URL
+  const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002'
     if (!apiBase) {
       console.error('Proxy Error: NEXT_PUBLIC_API_URL is not set.');
       return NextResponse.json({ error: 'API endpoint is not configured' }, { status: 500 })

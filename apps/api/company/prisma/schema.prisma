@@ -8,90 +8,78 @@ datasource db {
 }
 
 model Agent {
-  id          String   @id @default(uuid())
+  id          String   @id
   companyId   String?
-  userId      String   @db.Uuid
   name        String
   description String?
-  isTemplate  Boolean  @default(false)
-  isPublished Boolean  @default(false)
   createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  updatedAt   DateTime
+  userId      String   @db.Uuid
+  isPublished Boolean  @default(false)
+  isTemplate  Boolean  @default(false)
 
   @@index([companyId])
   @@index([userId])
 }
 
-/// Workflows are graph-based definitions used by the app.
 model Workflow {
-  id            String   @id @default(uuid())
-  name          String
-  description   String?
-  graph         Json
-  nodeOverrides Json
-  version       Int      @default(1)
-  status        String   @default("draft")
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  // Relations
-  versions        WorkflowVersion[]
-  runs            WorkflowRun[]
-  workingState    WorkflowWorkingState?
-  activeVersionId String? @unique
-  activeVersion   WorkflowVersion? @relation("ActiveVersion", fields: [activeVersionId], references: [id])
-  defaultBranch   String @default("main")
+  id                                                        String                @id
+  name                                                      String
+  description                                               String?
+  graph                                                     Json
+  nodeOverrides                                             Json
+  version                                                   Int                   @default(1)
+  createdAt                                                 DateTime              @default(now())
+  updatedAt                                                 DateTime
+  status                                                    String                @default("draft")
+  activeVersionId                                           String?               @unique
+  defaultBranch                                             String                @default("main")
+  WorkflowVersion_Workflow_activeVersionIdToWorkflowVersion WorkflowVersion?      @relation("Workflow_activeVersionIdToWorkflowVersion", fields: [activeVersionId], references: [id])
+  WorkflowRun                                               WorkflowRun[]
+  WorkflowVersion_WorkflowVersion_workflowIdToWorkflow      WorkflowVersion[]     @relation("WorkflowVersion_workflowIdToWorkflow")
+  WorkflowWorkingState                                      WorkflowWorkingState?
 
   @@index([updatedAt])
 }
 
-model WorkflowVersion {
-  id          String   @id @default(uuid())
-  workflowId  String
-  label       String?
-  name        String
-  description String?
-  graph       Json
-  createdAt   DateTime @default(now())
-  // Versioning metadata
-  versionNumber Int?
-  semanticHash  String?
-  diffSummary   String?
-  branch        String  @default("main")
+model WorkflowRun {
+  id         String   @id
+  workflowId String
+  status     String
+  input      Json?
+  result     Json?
+  createdAt  DateTime @default(now())
+  Workflow   Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
 
-  // Relations
-  workflow Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
-  // Back-reference for the named relation from Workflow.activeVersion
-  activeFor Workflow? @relation("ActiveVersion")
-
-  @@index([workflowId])
   @@index([createdAt])
+  @@index([workflowId])
+}
+
+model WorkflowVersion {
+  id                                                 String    @id
+  workflowId                                         String
+  label                                              String?
+  name                                               String
+  description                                        String?
+  graph                                              Json
+  createdAt                                          DateTime  @default(now())
+  branch                                             String    @default("main")
+  diffSummary                                        String?
+  semanticHash                                       String?
+  versionNumber                                      Int?
+  Workflow_Workflow_activeVersionIdToWorkflowVersion Workflow? @relation("Workflow_activeVersionIdToWorkflowVersion")
+  Workflow_WorkflowVersion_workflowIdToWorkflow      Workflow  @relation("WorkflowVersion_workflowIdToWorkflow", fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@index([workflowId])
   @@index([workflowId, versionNumber])
 }
 
-model WorkflowRun {
-  id          String   @id @default(uuid())
-  workflowId  String
-  status      String
-  input       Json?
-  result      Json?
-  createdAt   DateTime @default(now())
-
-  // Relations
-  workflow Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
-
-  @@index([workflowId])
-  @@index([createdAt])
-}
-
-/// Working copy per workflow (mutable draft state)
 model WorkflowWorkingState {
   workflowId String   @id
   graph      Json
   layoutHash String?
   createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  // Relations
-  workflow Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  updatedAt  DateTime
+  Workflow   Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
 }

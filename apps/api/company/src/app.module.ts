@@ -26,8 +26,8 @@ import { WorkflowsModule } from './workflows/workflows.module';
         limit: 10, // Stricter bucket for auth-sensitive endpoints if used later
       },
     ]),
-  AgentsModule,
-  WorkflowsModule,
+    AgentsModule,
+    WorkflowsModule,
   ],
   controllers: [AppController],
   providers: [
@@ -36,31 +36,33 @@ import { WorkflowsModule } from './workflows/workflows.module';
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
     },
-  {
-    provide: 'LOGGER',
-    useFactory: () => {
-      return pino({
-        level: process.env.LOG_LEVEL || 'info',
-        redact: {
-          paths: [
-            'req.headers.authorization',
-            'req.headers.cookie',
-            'password',
-            '*.password',
-            'refresh_token',
-            'access_token'
-          ],
-          remove: true
-        },
-        formatters: {
-          level(label) { return { level: label } }
-        }
-      })
-    }
-  },
-  { provide: 'APP_INTERCEPTOR', useClass: LoggingInterceptor },
-  { provide: 'APP_INTERCEPTOR', useClass: TimeoutInterceptor },
-  { provide: 'APP_FILTER', useClass: AllExceptionsFilter },
+    {
+      provide: 'LOGGER',
+      useFactory: () => {
+        return pino({
+          level: process.env.LOG_LEVEL || 'info',
+          redact: {
+            paths: [
+              'req.headers.authorization',
+              'req.headers.cookie',
+              'password',
+              '*.password',
+              'refresh_token',
+              'access_token',
+            ],
+            remove: true,
+          },
+          formatters: {
+            level(label) {
+              return { level: label };
+            },
+          },
+        });
+      },
+    },
+    { provide: 'APP_INTERCEPTOR', useClass: LoggingInterceptor },
+    { provide: 'APP_INTERCEPTOR', useClass: TimeoutInterceptor },
+    { provide: 'APP_FILTER', useClass: AllExceptionsFilter },
   ],
 })
 export class AppModule implements NestModule {

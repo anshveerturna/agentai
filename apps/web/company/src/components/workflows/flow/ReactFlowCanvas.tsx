@@ -1,5 +1,5 @@
 "use client";
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState, useEffect } from 'react';
 import {
   ReactFlow,
   Background,
@@ -19,7 +19,8 @@ import { Button } from '@/components/ui/button';
 import { useWorkflowStore } from '@/store/workflowStore';
 import type { NodeModel, Port } from '@/types/workflow';
 import ActionNode, { type ActionNodeData } from './nodes/ActionNode';
-import { GroupNode } from './nodes/GroupNode';
+import { GroupNode } from './nodes/GroupFrame';
+import TextNode from '@/components/nodes/TextNode';
 import { ActionLibrary } from '@/components/workflows/ActionLibrary';
 
 export type AddNodeFn = (type: string, initial?: Partial<Node>) => string;
@@ -60,8 +61,12 @@ export default function ReactFlowCanvas({ onNodeSelect, onNodeClick, onNodeDoubl
   const [ignoreNextSelection, setIgnoreNextSelection] = useState(false);
   const nodeTypes: NodeTypes = useMemo(() => ({ 
     action: ActionNode as any,
-    group: GroupNode as any
+    group: GroupNode as any,
+    text: TextNode as any,
   }), []);
+
+  // Drag-to-size state for text node creation
+  const [drawText, setDrawText] = useState<null | { start:{x:number;y:number}; current:{x:number;y:number}; rect:{left:number;top:number} }>(null);
 
   // Store bindings
   const {
@@ -93,14 +98,26 @@ export default function ReactFlowCanvas({ onNodeSelect, onNodeClick, onNodeDoubl
   const selectedNodeIds = useWorkflowStore((s) => s.selection.nodes);
 
   // nodes/edges mapping
+  // Compute set of nodeIds that are children of any group (for locking drag)
+  const groupedChildIds = useMemo(() => {
+    const set = new Set<string>();
+    (workflow.nodes || []).forEach((n: any) => {
+      if ((n?.config?.nodeType) === 'group') {
+        const list: string[] = Array.isArray(n?.config?.childIds) ? n.config.childIds : [];
+        list.forEach((id: string) => set.add(id));
+      }
+    });
+    return set;
+  }, [workflow.nodes]);
+
   const rfNodes = useMemo<Node[]>(() => (
-    workflow.nodes.map((n: NodeModel) => {
+    (workflow.nodes || []).map((n: NodeModel) => {
       const nodeType = (n as any)?.config?.nodeType || 'action';
       const isGroup = nodeType === 'group';
       return {
         id: n.id,
-        type: isGroup ? 'group' : 'action',
-        position: { x: n.position.x, y: n.position.y },
+        type: isGroup ? 'group' : (nodeType === 'text' ? 'text' : 'action'),
+        position: { x: (n as any)?.position?.x ?? 0, y: (n as any)?.position?.y ?? 0 },
         data: {
           label: n.label,
           kind: n.kind,
@@ -113,11 +130,13 @@ export default function ReactFlowCanvas({ onNodeSelect, onNodeClick, onNodeDoubl
         selected: !!n.selected,
         width: n.size?.width,
         height: n.size?.height,
-        // No parentNode/extent: children remain independent; group is purely visual frame
-        style: isGroup ? { zIndex: 0 } : undefined,
+        // Ensure action nodes render above groups regardless of array order
+        style: isGroup ? { zIndex: 0 } : { zIndex: 1 },
+        // Lock child nodes inside groups from being dragged individually
+        draggable: isGroup ? true : !groupedChildIds.has(n.id),
       };
     })
-  ), [workflow.nodes]);
+  ), [workflow.nodes, groupedChildIds]);
 
   const rfEdges = useMemo<Edge[]>(() =>
     workflow.edges.map((e) => {
@@ -163,7 +182,8 @@ export default function ReactFlowCanvas({ onNodeSelect, onNodeClick, onNodeDoubl
   // add node via store
   const addNode: AddNodeFn = useCallback((type: string, initial?: Partial<Node>) => {
     const deriveNodeType = (t: string) => (
-      t === 'text' ? 'text'
+      t === 'group' ? 'group'
+      : t === 'text' ? 'text'
       : t === 'condition' || t === 'split' ? 'condition'
       : t.includes('http') ? 'http'
       : t.includes('table') ? 'table'
@@ -191,6 +211,10 @@ export default function ReactFlowCanvas({ onNodeSelect, onNodeClick, onNodeDoubl
         { id: crypto.randomUUID(), name: 'in', direction: 'in', kind: 'control' } as Port,
         { id: crypto.randomUUID(), name: 'out', direction: 'out', kind: 'control' } as Port,
       ];
+    }
+    // Allow override of size when provided (used by drag-to-size text creation)
+    if (typeof initial?.width === 'number' && typeof initial?.height === 'number') {
+      size = { width: initial.width, height: initial.height } as any;
     }
     const id = storeAddNode({
       kind,
@@ -233,32 +257,53 @@ export default function ReactFlowCanvas({ onNodeSelect, onNodeClick, onNodeDoubl
   // node change: move/remove
   // Original delta-based move logic (reverted)
   const onNodesChange = useCallback((changes: any[]) => {
-    const positionChanges: { id: string; dx: number; dy: number }[] = [];
+    const positionChanges: { id: string; dx: number; dy: number; dragging?: boolean }[] = [];
     const removed: string[] = [];
+    let anyDragging = false;
+    const draggingGroups = new Set<string>();
     for (const ch of changes) {
       if (ch.type === 'position' && ch.position) {
         const n = workflow.nodes.find((x) => x.id === ch.id);
         if (!n) continue;
+        // Prevent individual movement of nodes that are inside any group
+        const isChildLocked = ((): boolean => {
+          // quick check using groupedChildIds
+          return groupedChildIds.has(ch.id) && ((n as any)?.config?.nodeType !== 'group');
+        })();
+        if (isChildLocked) continue;
         const dx = ch.position.x - n.position.x;
         const dy = ch.position.y - n.position.y;
-        if (dx !== 0 || dy !== 0) positionChanges.push({ id: ch.id, dx, dy });
+        const dragging = !!ch.dragging;
+        if (dragging) anyDragging = true;
+        if ((dx !== 0 || dy !== 0)) {
+          positionChanges.push({ id: ch.id, dx, dy, dragging });
+          if (dragging && (n as any)?.config?.nodeType === 'group') draggingGroups.add(ch.id);
+        }
       }
       if (ch.type === 'remove') removed.push(ch.id);
     }
 
     if (positionChanges.length) {
-      // Apply movements
-      positionChanges.forEach(({ id, dx, dy }) => {
+      // Apply movements (snap lightly while dragging, stronger snap on drop for non-groups)
+      positionChanges.forEach(({ id, dx, dy, dragging }) => {
         const node = workflow.nodes.find((x) => x.id === id) as any;
         const isGroup = node && node.config?.nodeType === 'group';
-        moveNodes([id], dx, dy, 1);
+        const snapWhileDragging = 1;
+        const snapOnDrop = 8;
+        moveNodes([id], dx, dy, dragging ? snapWhileDragging : snapOnDrop);
         if (isGroup) {
           const childIds: string[] = node.config?.childIds || [];
-          if (childIds.length) moveNodes(childIds, dx, dy, 1);
+          if (childIds.length) moveNodes(childIds, dx, dy, snapWhileDragging);
         }
       });
 
-      // Recompute bounds for any affected groups (groups moved or groups containing moved children)
+      // If any node is currently dragging, skip expensive membership/bounds recompute to avoid jitter
+      if (anyDragging) {
+        if (removed.length) removeNodes(removed);
+        return;
+      }
+
+      // Recompute bounds and membership only after drag end
       const movedIds = new Set(positionChanges.map((p) => p.id));
       const overridePos = new Map<string, { x: number; y: number }>();
       positionChanges.forEach(({ id, dx, dy }) => {
@@ -268,14 +313,61 @@ export default function ReactFlowCanvas({ onNodeSelect, onNodeClick, onNodeDoubl
       });
 
       const groups = workflow.nodes.filter((n: any) => n.config?.nodeType === 'group');
+
+      // Update group membership when non-group nodes move across boundaries
+      const affectedGroupIds = new Set<string>();
+      positionChanges.forEach(({ id }) => {
+        const node = workflow.nodes.find((x) => x.id === id) as any;
+        if (!node || node.config?.nodeType === 'group') return;
+        const nx = overridePos.get(id)?.x ?? node.position.x;
+        const ny = overridePos.get(id)?.y ?? node.position.y;
+        const nWidth = node.size?.width || 220;
+        const nHeight = node.size?.height || 100;
+        const center = { x: nx + nWidth / 2, y: ny + nHeight / 2 };
+
+        const currentGroups = groups.filter((g: any) => (g.config?.childIds || []).includes(id));
+        const containing = groups.filter((g: any) => {
+          const gx = overridePos.get(g.id)?.x ?? g.position.x;
+          const gy = overridePos.get(g.id)?.y ?? g.position.y;
+          const gw = g.size?.width || 320;
+          const gh = g.size?.height || 200;
+          const header = 40; // Title bar height (accounts for header pill height + spacing)
+          return center.x >= gx && center.x <= gx + gw && center.y >= gy + header && center.y <= gy + gh;
+        });
+
+        // pick smallest area group if multiple
+        const nextGroup = containing.sort((a: any, b: any) => (a.size?.width || 0) * (a.size?.height || 0) - (b.size?.width || 0) * (b.size?.height || 0))[0];
+
+        // Remove from groups no longer containing
+        currentGroups.forEach((g: any) => {
+          if (nextGroup && g.id === nextGroup.id) return;
+          const nextIds = (g.config?.childIds || []).filter((cid: string) => cid !== id);
+          updateNode(g.id, { config: { ...g.config, childIds: nextIds, childCount: nextIds.length } } as any);
+          affectedGroupIds.add(g.id);
+        });
+
+        // Add to chosen group if not already in it
+        if (nextGroup) {
+          const existingChildIds: string[] = Array.isArray((nextGroup as any).config?.childIds)
+            ? ((nextGroup as any).config.childIds as string[])
+            : [];
+          if (!existingChildIds.includes(id)) {
+            const nextIds = [ ...existingChildIds, id ];
+          updateNode(nextGroup.id, { config: { ...nextGroup.config, childIds: nextIds, childCount: nextIds.length } } as any);
+          affectedGroupIds.add(nextGroup.id);
+          }
+        }
+      });
+
       groups.forEach((g: any) => {
         const childIds: string[] = g.config?.childIds || [];
         const groupMoved = movedIds.has(g.id);
         const anyChildMoved = childIds.some((cid) => movedIds.has(cid));
-        if (!groupMoved && !anyChildMoved) return;
+        const membershipChanged = affectedGroupIds.has(g.id);
+        if (!groupMoved && !anyChildMoved && !membershipChanged) return;
         if (childIds.length === 0) return;
 
-        const padding = g.config?.padding || { top: 40, right: 24, bottom: 32, left: 24 };
+        const padding = g.config?.padding || { top: 48, right: 24, bottom: 32, left: 24 };
         // Compute bounds using overrides when available
         const childNodes = childIds
           .map((cid) => workflow.nodes.find((n) => n.id === cid))
@@ -300,7 +392,7 @@ export default function ReactFlowCanvas({ onNodeSelect, onNodeClick, onNodeDoubl
     }
 
     if (removed.length) removeNodes(removed);
-  }, [workflow.nodes, moveNodes, removeNodes, updateNode]);
+  }, [workflow.nodes, moveNodes, removeNodes, updateNode, groupedChildIds]);
 
   const onEdgesChange = useCallback((changes: any[]) => {
     const removed = changes.filter((c) => c.type === 'remove').map((c) => c.id).filter(Boolean);
@@ -353,8 +445,75 @@ export default function ReactFlowCanvas({ onNodeSelect, onNodeClick, onNodeDoubl
     } as ActionNodeData,
   })), [rfNodes, onPlusClick, selectNodes, storeAddNode, workflow.nodes, removeNodes]);
 
+  // ESC cancel drawing
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && drawText) {
+        setDrawText(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [drawText]);
+
   return (
-    <div className="w-full h-full relative">
+    <div
+      className="w-full h-full relative"
+      style={tool === 'text' ? { cursor: drawText ? 'crosshair' : 'crosshair' } : undefined}
+      onMouseDown={(e) => {
+        if (tool !== 'text') return;
+        if (e.button !== 0) return; // only left click
+        const target = e.target as HTMLElement;
+        // Ignore if clicking on existing node (has data-id attribute from ReactFlow) or library panel
+        if (target.closest('.react-flow__node')) return;
+        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        const start = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        setDrawText({ start, current: start, rect: { left: rect.left, top: rect.top } });
+        clearSelection();
+        e.preventDefault();
+      }}
+      onMouseMove={(e) => {
+        if (!drawText) return;
+        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        const current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        setDrawText((prev) => prev ? { ...prev, current } : prev);
+        e.preventDefault();
+      }}
+      onMouseUp={(e) => {
+        if (!drawText) return;
+        const { start, current, rect } = drawText;
+        const x0 = Math.min(start.x, current.x);
+        const y0 = Math.min(start.y, current.y);
+        const wScreen = Math.abs(current.x - start.x);
+        const hScreen = Math.abs(current.y - start.y);
+        setDrawText(null);
+        // Minimum viable outer size in screen pixels (what user draws)
+        const minOuterW = 120; const minOuterH = 40;
+        const zoom = instance?.getZoom?.() ?? viewport.zoom ?? 1;
+        // Convert drawn outer dimensions to internal flow coordinate space by dividing by zoom
+        const outerFlowW = Math.max(wScreen, minOuterW) / zoom;
+        const outerFlowH = Math.max(hScreen, minOuterH) / zoom;
+        // Account for padding (horizontal 14*2, vertical 10*2) and border (2*2) applied in TextNode so the rectangle matches outer box
+        const horizontalExtra = 28 + 4; // padding + border
+        const verticalExtra = 20 + 4;   // padding + border
+        const contentFlowW = Math.max(outerFlowW - horizontalExtra, 40); // ensure reasonable minimum content width
+        const contentFlowH = Math.max(outerFlowH - verticalExtra, 20);   // ensure reasonable minimum content height
+        // Convert top-left screen point to flow position
+        const screenPt = { x: rect.left + x0, y: rect.top + y0 };
+        let flowPos = { x: x0, y: y0 };
+        try {
+          if (instance && (instance as any).screenToFlowPosition) {
+            const p = (instance as any).screenToFlowPosition(screenPt);
+            if (p && typeof p.x === 'number' && typeof p.y === 'number') flowPos = p;
+          } else {
+            // fallback manual transform using viewport
+            flowPos = { x: (screenPt.x - viewport.offset.x) / viewport.zoom, y: (screenPt.y - viewport.offset.y) / viewport.zoom };
+          }
+        } catch {}
+        addNode('text', { position: flowPos as any, width: contentFlowW, height: contentFlowH });
+        e.preventDefault();
+      }}
+    >
       <ReactFlow
         nodes={rfNodesWithCallbacks}
         edges={rfEdges}
@@ -548,6 +707,33 @@ export default function ReactFlowCanvas({ onNodeSelect, onNodeClick, onNodeDoubl
           />
         )}
       </ReactFlow>
+      {drawText && tool === 'text' && (() => {
+        const { start, current } = drawText;
+        const x0 = Math.min(start.x, current.x);
+        const y0 = Math.min(start.y, current.y);
+        const w = Math.max(Math.abs(current.x - start.x), 4);
+        const h = Math.max(Math.abs(current.y - start.y), 4);
+        return (
+          <div
+            style={{
+              position: 'absolute',
+              left: x0,
+              top: y0,
+              width: w,
+              height: h,
+              border: '2px dashed #555',
+              background: 'rgba(255,255,255,0.12)',
+              borderRadius: 4,
+              pointerEvents: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 12,
+              color: '#64748b'
+            }}
+          >Text</div>
+        );
+      })()}
 
 
       {/* Empty State */}

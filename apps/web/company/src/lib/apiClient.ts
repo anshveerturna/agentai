@@ -18,9 +18,16 @@ async function getAccessToken(): Promise<string | null> {
   if (!isBrowser) return null;
   try {
     const client = getSupabaseClient();
-    const { data: { session } } = await client.auth.getSession();
+    const { data: { session }, error } = await client.auth.getSession();
+    console.log('[getAccessToken] session:', session ? 'EXISTS' : 'NULL', 'error:', error);
+    if (session?.access_token) {
+      console.log('[getAccessToken] token:', session.access_token.substring(0, 30) + '...');
+    } else {
+      console.warn('[getAccessToken] No access token - user may not be logged in');
+    }
     return session?.access_token || null;
-  } catch {
+  } catch (err) {
+    console.error('[getAccessToken] error:', err);
     return null;
   }
 }
@@ -62,7 +69,7 @@ async function fetchAgentsInternal(getToken?: () => Promise<string | null>): Pro
 
 // Default export for React Query usage (no args) relying on cookie-based session.
 export function fetchAgents(): Promise<Agent[]> {
-  return fetchAgentsInternal();
+  return fetchAgentsInternal(getAccessToken);
 }
 
 // Optional helper if a token getter is available elsewhere.

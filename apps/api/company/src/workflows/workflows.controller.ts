@@ -1,9 +1,23 @@
-import { Body, Controller, Get, Param, Post, Put, Delete as Del, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Put,
+  Delete as Del,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { WorkflowsService } from './workflows.service';
 import type { WorkflowDTO } from './workflows.service';
 
-interface NodeUpsertDTO { node: any }
-interface EdgeUpsertDTO { edge: any }
+interface NodeUpsertDTO {
+  node: any;
+}
+interface EdgeUpsertDTO {
+  edge: any;
+}
 
 @Controller('workflows')
 export class WorkflowsController {
@@ -12,7 +26,9 @@ export class WorkflowsController {
   // P5: Persistence moved to Prisma (see WorkflowsService)
 
   @Get()
-  list() { return this.workflows.list(); }
+  list() {
+    return this.workflows.list();
+  }
 
   // --- P6: Workflow Templates (static path must be above dynamic :id) ---
   @Get('templates')
@@ -21,13 +37,19 @@ export class WorkflowsController {
   }
 
   @Get(':id')
-  get(@Param('id') id: string) { return this.workflows.findOne(id); }
+  get(@Param('id') id: string) {
+    return this.workflows.findOne(id);
+  }
 
   @Post()
-  create(@Body() dto: WorkflowDTO) { return this.workflows.create(dto); }
+  create(@Body() dto: WorkflowDTO) {
+    return this.workflows.create(dto);
+  }
 
   @Put(':id')
-  update(@Param('id') id: string, @Body() dto: Partial<WorkflowDTO>) { return this.workflows.update(id, dto); }
+  update(@Param('id') id: string, @Body() dto: Partial<WorkflowDTO>) {
+    return this.workflows.update(id, dto);
+  }
 
   @Del(':id')
   async remove(@Param('id') id: string) {
@@ -46,7 +68,10 @@ export class WorkflowsController {
 
   // Update only status (does not bump version unless structural fields provided)
   @Post(':id/status')
-  async updateStatus(@Param('id') id: string, @Body() body: { status: string }) {
+  async updateStatus(
+    @Param('id') id: string,
+    @Body() body: { status: string },
+  ) {
     if (!body?.status) throw new BadRequestException('Missing status');
     const wf = await this.workflows.update(id, { status: body.status });
     if (!wf) throw new NotFoundException('Workflow not found');
@@ -59,12 +84,19 @@ export class WorkflowsController {
     if (!dto?.node) throw new BadRequestException('Missing node');
     const wf = await this.workflows.findOne(id);
     if (!wf) throw new NotFoundException('Workflow not found');
-    const graph = (wf as any).graph || { nodes: [], edges: [], viewport: {}, meta: {} };
+    const graph = (wf as any).graph || {
+      nodes: [],
+      edges: [],
+      viewport: {},
+      meta: {},
+    };
     graph.nodes = Array.isArray(graph.nodes) ? graph.nodes : [];
     // Assign server id if temp
-    if (!dto.node.id || String(dto.node.id).startsWith('tmp_')) dto.node.id = crypto.randomUUID();
+    if (!dto.node.id || String(dto.node.id).startsWith('tmp_'))
+      dto.node.id = crypto.randomUUID();
     // Basic de-dupe
-    if (graph.nodes.find((n: any) => n.id === dto.node.id)) return { id: dto.node.id };
+    if (graph.nodes.find((n: any) => n.id === dto.node.id))
+      return { id: dto.node.id };
     graph.nodes.push(dto.node);
     await this.workflows.update(id, { graph });
     return { id: dto.node.id };
@@ -75,16 +107,26 @@ export class WorkflowsController {
     if (!dto?.edge) throw new BadRequestException('Missing edge');
     const wf = await this.workflows.findOne(id);
     if (!wf) throw new NotFoundException('Workflow not found');
-    const graph = (wf as any).graph || { nodes: [], edges: [], viewport: {}, meta: {} };
+    const graph = (wf as any).graph || {
+      nodes: [],
+      edges: [],
+      viewport: {},
+      meta: {},
+    };
     graph.edges = Array.isArray(graph.edges) ? graph.edges : [];
     // Assign server id if temp
-    if (!dto.edge.id || String(dto.edge.id).startsWith('tmp_')) dto.edge.id = crypto.randomUUID();
+    if (!dto.edge.id || String(dto.edge.id).startsWith('tmp_'))
+      dto.edge.id = crypto.randomUUID();
     // Validate node existence
     const nodeIds = new Set((graph.nodes || []).map((n: any) => n.id));
-    if (!nodeIds.has(dto.edge.from?.nodeId) || !nodeIds.has(dto.edge.to?.nodeId)) {
+    if (
+      !nodeIds.has(dto.edge.from?.nodeId) ||
+      !nodeIds.has(dto.edge.to?.nodeId)
+    ) {
       throw new BadRequestException('Edge references missing node');
     }
-    if (graph.edges.find((e: any) => e.id === dto.edge.id)) return { id: dto.edge.id };
+    if (graph.edges.find((e: any) => e.id === dto.edge.id))
+      return { id: dto.edge.id };
     graph.edges.push(dto.edge);
     await this.workflows.update(id, { graph });
     return { id: dto.edge.id };
@@ -100,31 +142,59 @@ export class WorkflowsController {
     const edges = Array.isArray(graph.edges) ? graph.edges : [];
     const issues: any[] = [];
     const triggers = nodes.filter((n: any) => n.kind === 'trigger');
-    if (triggers.length === 0) issues.push({ code: 'no-trigger', message: 'No trigger node present', severity: 'error' });
-    if (triggers.length > 1) issues.push({ code: 'multiple-triggers', message: 'Multiple trigger nodes present', severity: 'error' });
-    const nodeIds = new Set(nodes.map((n:any)=> n.id));
-    edges.forEach((e:any)=>{ if(!nodeIds.has(e.from?.nodeId)||!nodeIds.has(e.to?.nodeId)) issues.push({ code:'dangling-edge', message:`Edge ${e.id} references missing node`, severity:'error' }); });
+    if (triggers.length === 0)
+      issues.push({
+        code: 'no-trigger',
+        message: 'No trigger node present',
+        severity: 'error',
+      });
+    if (triggers.length > 1)
+      issues.push({
+        code: 'multiple-triggers',
+        message: 'Multiple trigger nodes present',
+        severity: 'error',
+      });
+    const nodeIds = new Set(nodes.map((n: any) => n.id));
+    edges.forEach((e: any) => {
+      if (!nodeIds.has(e.from?.nodeId) || !nodeIds.has(e.to?.nodeId))
+        issues.push({
+          code: 'dangling-edge',
+          message: `Edge ${e.id} references missing node`,
+          severity: 'error',
+        });
+    });
     return { issues };
   }
 
   // --- P3: Versions ---
   @Get(':id/versions')
-  listVersions(@Param('id') id: string) { return this.workflows.listVersions(id); }
+  listVersions(@Param('id') id: string) {
+    return this.workflows.listVersions(id);
+  }
   @Post(':id/versions')
-  async createVersion(@Param('id') id: string, @Body() body: { label?: string }) {
+  async createVersion(
+    @Param('id') id: string,
+    @Body() body: { label?: string },
+  ) {
     const wf = await this.workflows.findOne(id);
     if (!wf) throw new NotFoundException('Workflow not found');
     return this.workflows.createVersion(id, body?.label);
   }
   @Post(':id/versions/:versionId/restore')
-  async restoreVersion(@Param('id') id: string, @Param('versionId') versionId: string) {
+  async restoreVersion(
+    @Param('id') id: string,
+    @Param('versionId') versionId: string,
+  ) {
     const res = await this.workflows.restoreVersion(id, versionId);
     if (!res) throw new NotFoundException('Version not found');
     return res;
   }
 
   @Del(':id/versions/:versionId')
-  async deleteVersion(@Param('id') id: string, @Param('versionId') versionId: string) {
+  async deleteVersion(
+    @Param('id') id: string,
+    @Param('versionId') versionId: string,
+  ) {
     const res = await this.workflows.deleteVersion(id, versionId);
     if (!res) throw new NotFoundException('Version not found');
     return res;
@@ -132,7 +202,9 @@ export class WorkflowsController {
 
   // --- Working Copy + Semantic Commit ---
   @Get(':id/working-copy')
-  getWorkingCopy(@Param('id') id: string) { return this.workflows.getWorkingCopy(id); }
+  getWorkingCopy(@Param('id') id: string) {
+    return this.workflows.getWorkingCopy(id);
+  }
 
   @Post(':id/working-copy')
   updateWorkingCopy(@Param('id') id: string, @Body() body: { graph: any }) {
@@ -141,22 +213,36 @@ export class WorkflowsController {
   }
 
   @Post(':id/maybe-commit')
-  maybeCommit(@Param('id') id: string, @Body() body?: { minIntervalSec?: number; threshold?: number }) {
+  maybeCommit(
+    @Param('id') id: string,
+    @Body() body?: { minIntervalSec?: number; threshold?: number },
+  ) {
     return this.workflows.maybeCommit(id, body);
   }
 
   @Post(':id/commit')
-  commitExplicit(@Param('id') id: string, @Body() body?: { name?: string; description?: string }) {
+  commitExplicit(
+    @Param('id') id: string,
+    @Body() body?: { name?: string; description?: string },
+  ) {
     return this.workflows.commitExplicit(id, body?.name, body?.description);
   }
 
   // --- P3: Run History ---
   @Get(':id/run-history')
-  getRunHistory(@Param('id') id: string) { return this.workflows.listRuns(id); }
-  @Post(':id/run-history')
-  addRunHistory(@Param('id') id: string, @Body() body: { input?: any; status: string; result?: any }) {
-    if (!body?.status) throw new BadRequestException('Missing status');
-    return this.workflows.addRun(id, { status: body.status, input: body.input, result: body.result });
+  getRunHistory(@Param('id') id: string) {
+    return this.workflows.listRuns(id);
   }
-
+  @Post(':id/run-history')
+  addRunHistory(
+    @Param('id') id: string,
+    @Body() body: { input?: any; status: string; result?: any },
+  ) {
+    if (!body?.status) throw new BadRequestException('Missing status');
+    return this.workflows.addRun(id, {
+      status: body.status,
+      input: body.input,
+      result: body.result,
+    });
+  }
 }

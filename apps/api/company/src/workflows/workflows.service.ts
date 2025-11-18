@@ -1,5 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { PrismaClient, type Workflow as WorkflowModel, type WorkflowVersion as WorkflowVersionModel, type WorkflowRun as WorkflowRunModel } from '@prisma/client';
+import {
+  PrismaClient,
+  type Workflow as WorkflowModel,
+  type WorkflowVersion as WorkflowVersionModel,
+  type WorkflowRun as WorkflowRunModel,
+} from '@prisma/client';
 import { diffAndScore, semanticHash } from './semantic';
 
 const prisma = new PrismaClient();
@@ -25,7 +30,8 @@ export class WorkflowsService {
         graph: data.graph as any,
         nodeOverrides: (data.nodeOverrides ?? {}) as any,
         status: data.status ?? 'draft',
-      }
+        updatedAt: new Date(),
+      },
     });
   }
 
@@ -34,7 +40,9 @@ export class WorkflowsService {
   }
 
   async update(id: string, data: Partial<WorkflowDTO>): Promise<WorkflowModel> {
-    const shouldIncrement = Boolean(data.name || data.description || data.graph || data.nodeOverrides);
+    const shouldIncrement = Boolean(
+      data.name || data.description || data.graph || data.nodeOverrides,
+    );
     return prisma.workflow.update({
       where: { id },
       data: {
@@ -43,8 +51,9 @@ export class WorkflowsService {
         graph: (data.graph ?? undefined) as any,
         nodeOverrides: (data.nodeOverrides ?? undefined) as any,
         status: data.status,
-        ...(shouldIncrement ? { version: { increment: 1 } } : {})
-      }
+        updatedAt: new Date(),
+        ...(shouldIncrement ? { version: { increment: 1 } } : {}),
+      },
     });
   }
 
@@ -61,8 +70,9 @@ export class WorkflowsService {
         description: src.description ?? undefined,
         graph: src.graph as any,
         nodeOverrides: src.nodeOverrides as any,
-        status: src.status ?? 'draft'
-      }
+        status: src.status ?? 'draft',
+        updatedAt: new Date(),
+      },
     });
   }
 
@@ -74,10 +84,11 @@ export class WorkflowsService {
     await prisma.workflow.delete({ where: { id } });
     return { deleted: true };
   }
-  
 
   // --- Versions (legacy-style snapshot APIs; kept for compatibility) ---
-  async listVersions(workflowId: string): Promise<Array<Pick<WorkflowVersionModel,'id'|'createdAt'|'label'>>> {
+  async listVersions(
+    workflowId: string,
+  ): Promise<Array<Pick<WorkflowVersionModel, 'id' | 'createdAt' | 'label'>>> {
     // Return explicit commits (exclude autosave and restore entries)
     // @ts-ignore - name and description fields available post-migration
     return (prisma as any).workflowVersion.findMany({
@@ -91,18 +102,32 @@ export class WorkflowsService {
         ],
       },
       orderBy: { createdAt: 'desc' },
-      select: { id: true, createdAt: true, label: true, name: true, description: true, versionNumber: true, semanticHash: true }
+      select: {
+        id: true,
+        createdAt: true,
+        label: true,
+        name: true,
+        description: true,
+        versionNumber: true,
+        semanticHash: true,
+      },
     });
   }
-  async createVersion(workflowId: string, label?: string): Promise<{ id: string } | undefined> {
+  async createVersion(
+    workflowId: string,
+    label?: string,
+  ): Promise<{ id: string } | undefined> {
     const wf = await this.findOne(workflowId);
     if (!wf) return undefined;
     // Compute semantic versionNumber and metadata
-  // Cast prisma to any for fields added by pending migration
-  // @ts-ignore - versionNumber ordering requires regenerated prisma types
-  const last = await (prisma as any).workflowVersion.findFirst({ where: { workflowId }, orderBy: { versionNumber: 'desc' } });
-  // @ts-ignore - versionNumber added by migration
-  const versionNumber = ((last?.versionNumber as number) ?? 0) + 1;
+    // Cast prisma to any for fields added by pending migration
+    // @ts-ignore - versionNumber ordering requires regenerated prisma types
+    const last = await (prisma as any).workflowVersion.findFirst({
+      where: { workflowId },
+      orderBy: { versionNumber: 'desc' },
+    });
+    // @ts-ignore - versionNumber added by migration
+    const versionNumber = ((last?.versionNumber as number) ?? 0) + 1;
     const hash = semanticHash(wf.graph);
     // @ts-ignore - extra fields supported after migration
     const rec = await (prisma as any).workflowVersion.create({
@@ -116,20 +141,34 @@ export class WorkflowsService {
         semanticHash: hash,
         diffSummary: label || undefined,
         // @ts-ignore - defaultBranch exists after migration
-        branch: (await prisma.workflow.findUnique({ where: { id: workflowId }, select: { defaultBranch: true } }) as any)?.defaultBranch || 'main',
-      }
+        branch:
+          (
+            (await prisma.workflow.findUnique({
+              where: { id: workflowId },
+              select: { defaultBranch: true },
+            })) as any
+          )?.defaultBranch || 'main',
+      },
     });
     return { id: rec.id };
   }
   // Non-destructive revert: creates a new version whose graph equals selected version
-  async restoreVersion(workflowId: string, versionId: string): Promise<{ restored: string } | undefined> {
-    const v = await prisma.workflowVersion.findUnique({ where: { id: versionId } });
+  async restoreVersion(
+    workflowId: string,
+    versionId: string,
+  ): Promise<{ restored: string } | undefined> {
+    const v = await prisma.workflowVersion.findUnique({
+      where: { id: versionId },
+    });
     if (!v || v.workflowId !== workflowId) return undefined;
     const wf = await this.findOne(workflowId);
     if (!wf) return undefined;
     // Create a new version identical to 'v'
     // @ts-ignore - order by versionNumber available post-migration
-    const last = await (prisma as any).workflowVersion.findFirst({ where: { workflowId }, orderBy: { versionNumber: 'desc' } });
+    const last = await (prisma as any).workflowVersion.findFirst({
+      where: { workflowId },
+      orderBy: { versionNumber: 'desc' },
+    });
     // @ts-ignore - field exists post-migration
     const versionNumber = ((last?.versionNumber as number) ?? 0) + 1;
     // @ts-ignore - extra fields available post-migration
@@ -148,23 +187,34 @@ export class WorkflowsService {
         diffSummary: `Reverted to v${(v as any).versionNumber}`,
         // @ts-ignore
         branch: (v as any).branch,
-      }
+      },
     });
     // Update active pointer and current workflow graph to match reverted spec
     // @ts-ignore - activeVersionId exists post-migration
-    await (prisma as any).workflow.update({ where: { id: workflowId }, data: { graph: v.graph as any, activeVersionId: rec.id } });
+    await (prisma as any).workflow.update({
+      where: { id: workflowId },
+      data: { graph: v.graph as any, activeVersionId: rec.id },
+    });
     return { restored: rec.id };
   }
 
-  async deleteVersion(workflowId: string, versionId: string): Promise<{ deleted: boolean } | undefined> {
-    const v = await prisma.workflowVersion.findUnique({ where: { id: versionId } });
+  async deleteVersion(
+    workflowId: string,
+    versionId: string,
+  ): Promise<{ deleted: boolean } | undefined> {
+    const v = await prisma.workflowVersion.findUnique({
+      where: { id: versionId },
+    });
     if (!v || v.workflowId !== workflowId) return undefined;
     const wf = await this.findOne(workflowId);
     if (!wf) return undefined;
     // If this version is active, clear the pointer first
     if ((wf as any).activeVersionId === versionId) {
       // @ts-ignore - activeVersionId exists post-migration
-      await (prisma as any).workflow.update({ where: { id: workflowId }, data: { activeVersionId: null } });
+      await (prisma as any).workflow.update({
+        where: { id: workflowId },
+        data: { activeVersionId: null },
+      });
     }
     await prisma.workflowVersion.delete({ where: { id: versionId } });
     return { deleted: true };
@@ -172,10 +222,24 @@ export class WorkflowsService {
 
   // Run history
   async listRuns(workflowId: string): Promise<WorkflowRunModel[]> {
-    return prisma.workflowRun.findMany({ where: { workflowId }, orderBy: { createdAt: 'desc' }, take: 50 });
+    return prisma.workflowRun.findMany({
+      where: { workflowId },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
   }
-  async addRun(workflowId: string, record: { status: string; input?: unknown; result?: unknown }): Promise<{ id: string }> {
-    const rec = await prisma.workflowRun.create({ data: { workflowId, status: record.status, input: record.input as any, result: record.result as any } });
+  async addRun(
+    workflowId: string,
+    record: { status: string; input?: unknown; result?: unknown },
+  ): Promise<{ id: string }> {
+    const rec = await prisma.workflowRun.create({
+      data: {
+        workflowId,
+        status: record.status,
+        input: record.input as any,
+        result: record.result as any,
+      },
+    });
     return { id: rec.id };
   }
 
@@ -186,13 +250,14 @@ export class WorkflowsService {
       {
         id: 'customer-support-automation',
         name: 'Customer Support Automation',
-        description: 'Automatically route and respond to customer inquiries with AI',
+        description:
+          'Automatically route and respond to customer inquiries with AI',
         category: 'Customer Service',
         complexity: 'Beginner',
         estimatedTime: '10 min',
         icon: 'MessageCircle',
         color: 'bg-blue-500',
-        features: ['AI Chatbot', 'Ticket Routing', 'Auto-responses']
+        features: ['AI Chatbot', 'Ticket Routing', 'Auto-responses'],
       },
       {
         id: 'data-pipeline-analytics',
@@ -203,7 +268,7 @@ export class WorkflowsService {
         estimatedTime: '30 min',
         icon: 'Database',
         color: 'bg-green-500',
-        features: ['ETL Pipeline', 'Data Validation', 'Reporting']
+        features: ['ETL Pipeline', 'Data Validation', 'Reporting'],
       },
       {
         id: 'social-media-automation',
@@ -214,7 +279,7 @@ export class WorkflowsService {
         estimatedTime: '20 min',
         icon: 'Globe',
         color: 'bg-purple-500',
-        features: ['Content Scheduling', 'Analytics', 'Multi-platform']
+        features: ['Content Scheduling', 'Analytics', 'Multi-platform'],
       },
       {
         id: 'document-processing',
@@ -225,7 +290,7 @@ export class WorkflowsService {
         estimatedTime: '15 min',
         icon: 'FileText',
         color: 'bg-orange-500',
-        features: ['OCR', 'AI Extraction', 'Validation']
+        features: ['OCR', 'AI Extraction', 'Validation'],
       },
       {
         id: 'ecommerce-order-flow',
@@ -236,7 +301,7 @@ export class WorkflowsService {
         estimatedTime: '45 min',
         icon: 'Zap',
         color: 'bg-indigo-500',
-        features: ['Payment Processing', 'Inventory', 'Shipping']
+        features: ['Payment Processing', 'Inventory', 'Shipping'],
       },
       {
         id: 'ai-content-generator',
@@ -247,36 +312,48 @@ export class WorkflowsService {
         estimatedTime: '5 min',
         icon: 'Sparkles',
         color: 'bg-gradient-to-r from-purple-500 to-pink-500',
-        features: ['GPT Integration', 'Auto Publishing', 'SEO Optimization']
-      }
+        features: ['GPT Integration', 'Auto Publishing', 'SEO Optimization'],
+      },
     ];
   }
 
   // --- Working Copy + Semantic Commit APIs ---
-  async getWorkingCopy(workflowId: string): Promise<{ graph: any } | undefined> {
-  // @ts-ignore - model exists post-migration
-  const ws = await (prisma as any).workflowWorkingState.findUnique({ where: { workflowId } });
-    if (ws) return { graph: ws.graph as any };
+  async getWorkingCopy(
+    workflowId: string,
+  ): Promise<{ graph: any } | undefined> {
+    // @ts-ignore - model exists post-migration
+    const ws = await (prisma as any).workflowWorkingState.findUnique({
+      where: { workflowId },
+    });
+    if (ws) return { graph: ws.graph };
     const wf = await this.findOne(workflowId);
     if (!wf) return undefined;
     // Initialize from current workflow.graph
-  // @ts-ignore - model exists post-migration
-  const created = await (prisma as any).workflowWorkingState.create({ data: { workflowId, graph: wf.graph as any } });
-    return { graph: created.graph as any };
+    // @ts-ignore - model exists post-migration
+    const created = await (prisma as any).workflowWorkingState.create({
+      data: { workflowId, graph: wf.graph as any, updatedAt: new Date() },
+    });
+    return { graph: created.graph };
   }
 
-  async updateWorkingCopy(workflowId: string, graph: any): Promise<{ semanticHash: string }> {
+  async updateWorkingCopy(
+    workflowId: string,
+    graph: any,
+  ): Promise<{ semanticHash: string }> {
     const hash = semanticHash(graph);
     // @ts-ignore - model exists post-migration
     await (prisma as any).workflowWorkingState.upsert({
       where: { workflowId },
-      update: { graph: graph as any },
-      create: { workflowId, graph: graph as any },
+      update: { graph: graph, updatedAt: new Date() },
+      create: { workflowId, graph: graph, updatedAt: new Date() },
     });
     return { semanticHash: hash };
   }
 
-  async maybeCommit(workflowId: string, opts?: { minIntervalSec?: number; threshold?: number }): Promise<{ committed: boolean; versionId?: string; summary?: string }> {
+  async maybeCommit(
+    workflowId: string,
+    opts?: { minIntervalSec?: number; threshold?: number },
+  ): Promise<{ committed: boolean; versionId?: string; summary?: string }> {
     // Feature flag: disable backend auto-commits unless explicitly enabled
     if (process.env.WORKFLOW_AUTOCOMMIT_ENABLED !== 'true') {
       return { committed: false };
@@ -284,13 +361,18 @@ export class WorkflowsService {
     const { minIntervalSec = 120, threshold = 5 } = opts || {};
     const wf = await this.findOne(workflowId);
     if (!wf) return { committed: false };
-  // @ts-ignore - model exists post-migration
-  const ws = await (prisma as any).workflowWorkingState.findUnique({ where: { workflowId } });
+    // @ts-ignore - model exists post-migration
+    const ws = await (prisma as any).workflowWorkingState.findUnique({
+      where: { workflowId },
+    });
     if (!ws) return { committed: false };
-  // @ts-ignore - order by versionNumber available post-migration
-  const head = await (prisma as any).workflowVersion.findFirst({ where: { workflowId }, orderBy: { versionNumber: 'desc' } });
+    // @ts-ignore - order by versionNumber available post-migration
+    const head = await (prisma as any).workflowVersion.findFirst({
+      where: { workflowId },
+      orderBy: { versionNumber: 'desc' },
+    });
     const headGraph = head?.graph ?? wf.graph;
-    const { score, summary } = diffAndScore(headGraph as any, ws.graph as any);
+    const { score, summary } = diffAndScore(headGraph, ws.graph);
     if (score < threshold) return { committed: false };
     // time gate
     if (head?.createdAt) {
@@ -299,9 +381,9 @@ export class WorkflowsService {
     }
     const newHash = semanticHash(ws.graph);
     // @ts-ignore - semanticHash exists post-migration
-    if (newHash === (head as any)?.semanticHash) return { committed: false };
+    if (newHash === head?.semanticHash) return { committed: false };
     // @ts-ignore - versionNumber exists post-migration
-    const versionNumber = (((head as any)?.versionNumber as number) ?? 0) + 1;
+    const versionNumber = ((head?.versionNumber as number) ?? 0) + 1;
     // @ts-ignore - extra fields available post-migration
     const rec = await (prisma as any).workflowVersion.create({
       data: {
@@ -309,30 +391,42 @@ export class WorkflowsService {
         label: undefined,
         name: wf.name,
         description: wf.description ?? undefined,
-        graph: ws.graph as any,
+        graph: ws.graph,
         versionNumber,
         semanticHash: newHash,
         diffSummary: summary,
         // @ts-ignore - defaultBranch exists post-migration
         branch: (wf as any).defaultBranch ?? 'main',
-      }
+      },
     });
     // Do not auto-promote active by default; keep policy flexible. For now, set active to latest.
     // @ts-ignore - activeVersionId exists post-migration
-    await (prisma as any).workflow.update({ where: { id: workflowId }, data: { activeVersionId: rec.id, graph: ws.graph as any } });
+    await (prisma as any).workflow.update({
+      where: { id: workflowId },
+      data: { activeVersionId: rec.id, graph: ws.graph, updatedAt: new Date() },
+    });
     return { committed: true, versionId: rec.id, summary };
   }
 
-  async commitExplicit(workflowId: string, name?: string, description?: string): Promise<{ id: string }> {
+  async commitExplicit(
+    workflowId: string,
+    name?: string,
+    description?: string,
+  ): Promise<{ id: string }> {
     const wf = await this.findOne(workflowId);
     if (!wf) throw new Error('workflow not found');
-  // @ts-ignore - model exists post-migration
-  const ws = await (prisma as any).workflowWorkingState.findUnique({ where: { workflowId } });
-    const graph = (ws?.graph ?? wf.graph) as any;
+    // @ts-ignore - model exists post-migration
+    const ws = await (prisma as any).workflowWorkingState.findUnique({
+      where: { workflowId },
+    });
+    const graph = ws?.graph ?? wf.graph;
     // @ts-ignore - order by versionNumber available post-migration
-    const head = await (prisma as any).workflowVersion.findFirst({ where: { workflowId }, orderBy: { versionNumber: 'desc' } });
+    const head = await (prisma as any).workflowVersion.findFirst({
+      where: { workflowId },
+      orderBy: { versionNumber: 'desc' },
+    });
     // @ts-ignore - versionNumber exists post-migration
-    const versionNumber = (((head as any)?.versionNumber as number) ?? 0) + 1;
+    const versionNumber = ((head?.versionNumber as number) ?? 0) + 1;
     const hash = semanticHash(graph);
     // @ts-ignore - extra fields available post-migration
     const rec = await (prisma as any).workflowVersion.create({
@@ -347,10 +441,13 @@ export class WorkflowsService {
         diffSummary: description,
         // @ts-ignore
         branch: (wf as any).defaultBranch ?? 'main',
-      }
+      },
     });
     // @ts-ignore - activeVersionId exists post-migration
-    await (prisma as any).workflow.update({ where: { id: workflowId }, data: { activeVersionId: rec.id, graph } });
+    await (prisma as any).workflow.update({
+      where: { id: workflowId },
+      data: { activeVersionId: rec.id, graph, updatedAt: new Date() },
+    });
     return { id: rec.id };
   }
 }

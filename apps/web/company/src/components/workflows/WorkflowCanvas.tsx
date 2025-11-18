@@ -409,10 +409,17 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
       // Group selected nodes with G
       if (!e.metaKey && !e.ctrlKey && e.key.toLowerCase() === 'g') {
         e.preventDefault();
-        const selectedNodeIds = Array.from(workflowSnapshot.nodes.filter(n => n.selected).map(n => n.id));
+        // Prefer store selection set (more reliable than transient node.selected flags)
+        const selIds = Array.from(useWorkflowStore.getState().selection.nodes);
+        const selectedNodeIds = selIds.length ? selIds : Array.from(workflowSnapshot.nodes.filter(n => n.selected).map(n => n.id));
         if (selectedNodeIds.length >= 2) {
           const groupNodes = useWorkflowStore.getState().groupNodes;
-          groupNodes(selectedNodeIds);
+          const id = groupNodes(selectedNodeIds);
+          if (!id) {
+            console.warn('[Group] Failed to create group from ids', selectedNodeIds);
+          }
+        } else {
+          console.info('[Group] Need at least 2 nodes selected (have', selectedNodeIds.length, ')');
         }
       }
     };
@@ -599,21 +606,20 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
             setSelectedNode(node);
           }}
           onNodeDoubleClick={(node) => {
-            // Double-click: open properties for the node (unless in connector mode)
+            // Suppress properties panel for text nodes
             if (selectedTool === 'connector') return;
+            const isText = (node as any)?.data?.nodeType === 'text' || (node as any)?.data?.config?.nodeType === 'text';
             setSelectedNode(node);
-            setShowPropertiesPanel(true);
+            if (!isText) {
+              setShowPropertiesPanel(true);
+            } else {
+              // If panel was open for previous node, close it when double-clicking text
+              if (showPropertiesPanel) setShowPropertiesPanel(false);
+            }
           }}
           onPaneClick={(pos) => {
-            // In text mode, click to add a text node at cursor
-            if (selectedTool === 'text' && addNodeApi) {
-              const id = addNodeApi('text', { position: pos as any, data: { label: 'Text' } as any });
-              setSelectedTool('cursor');
-              setSelectedNode({ id, position: pos as any } as any);
-              setShowPropertiesPanel(true);
-            }
+            // Disable click-to-create for text tool so drag-to-size is primary
             if (selectedTool === 'connector' && pendingConnectorFrom) {
-              // cancel dangling connector on pane click
               setPendingConnectorFrom(null);
             }
           }}
@@ -661,22 +667,21 @@ export function WorkflowCanvas({ onBack, isCodeView, onToggleCodeView }: Workflo
           onToolSelect={(tool) => {
             // Handle group button - instant action, not a toggle tool
             if (tool === 'group') {
-              const selectedNodeIds = Array.from(workflowSnapshot.nodes.filter(n => n.selected).map(n => n.id));
+              const selIds = Array.from(useWorkflowStore.getState().selection.nodes);
+              const selectedNodeIds = selIds.length ? selIds : Array.from(workflowSnapshot.nodes.filter(n => n.selected).map(n => n.id));
               if (selectedNodeIds.length >= 2) {
-                const { groupNodes } = useWorkflowStore.getState();
+                const { groupNodes, selectNodes } = useWorkflowStore.getState();
                 const groupId = groupNodes(selectedNodeIds);
                 if (groupId) {
-                  // Select the new group
-                  setTimeout(() => {
-                    const { selectNodes } = useWorkflowStore.getState();
-                    selectNodes([groupId]);
-                  }, 50);
+                  // Select the new group immediately
+                  selectNodes([groupId]);
+                } else {
+                  console.warn('[Group] groupNodes returned null');
                 }
               } else {
-                console.log('Please select 2 or more nodes to group');
+                console.log('Please select 2 or more nodes to group (currently', selectedNodeIds.length, ')');
               }
-              // Don't change the selected tool - group is an action, not a mode
-              return;
+              return; // keep current tool
             }
             
             setSelectedTool(tool);

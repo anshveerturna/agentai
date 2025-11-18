@@ -5,7 +5,11 @@ import { Request, Response, NextFunction } from 'express';
 // Adds/propagates a correlation ID for each request. Header: X-Request-Id
 @Injectable()
 export class CorrelationIdMiddleware implements NestMiddleware {
-  use(req: Request & { correlationId?: string }, _res: Response, next: NextFunction) {
+  use(
+    req: Request & { correlationId?: string },
+    _res: Response,
+    next: NextFunction,
+  ) {
     const incoming = req.header('x-request-id');
     const id = incoming && incoming.trim() !== '' ? incoming : randomUUID();
     req.correlationId = id;

@@ -1,4 +1,10 @@
-import { CallHandler, ExecutionContext, Injectable, NestInterceptor, Inject } from '@nestjs/common';
+import {
+  CallHandler,
+  ExecutionContext,
+  Injectable,
+  NestInterceptor,
+  Inject,
+} from '@nestjs/common';
 import { Observable, tap } from 'rxjs';
 import { Logger } from 'pino';
 
@@ -19,29 +25,36 @@ export class LoggingInterceptor implements NestInterceptor {
       tap({
         next: () => {
           const res = http.getResponse();
-            const status = res.statusCode;
-            this.logger.info({
+          const status = res.statusCode;
+          this.logger.info(
+            {
               method,
               url,
               status,
               durationMs: Date.now() - now,
               requestId: correlationId,
-              userId: userId || null
-            }, 'request_completed');
+              userId: userId || null,
+            },
+            'request_completed',
+          );
         },
         error: (err) => {
-          this.logger.error({
-            method,
-            url,
-            errorName: err?.name,
-            errorMessage: err?.message,
-            stack: process.env.NODE_ENV === 'production' ? undefined : err?.stack,
-            durationMs: Date.now() - now,
-            requestId: correlationId,
-            userId: userId || null
-          }, 'request_error');
-        }
-      })
+          this.logger.error(
+            {
+              method,
+              url,
+              errorName: err?.name,
+              errorMessage: err?.message,
+              stack:
+                process.env.NODE_ENV === 'production' ? undefined : err?.stack,
+              durationMs: Date.now() - now,
+              requestId: correlationId,
+              userId: userId || null,
+            },
+            'request_error',
+          );
+        },
+      }),
     );
   }
 }

@@ -1,4 +1,10 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException, Logger } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  Injectable,
+  UnauthorizedException,
+  Logger,
+} from '@nestjs/common';
 import type { Request } from 'express';
 import { jwtVerify, createRemoteJWKSet, decodeJwt, JWTPayload } from 'jose';
 
@@ -56,8 +62,8 @@ export class SupabaseJwtGuard implements CanActivate {
       }
     }
 
-    this.logger.log(`Using JWKS URL: ${jwksUrl!.toString()}`);
-    const jwks = createRemoteJWKSet(jwksUrl!);
+    this.logger.log(`Using JWKS URL: ${jwksUrl.toString()}`);
+    const jwks = createRemoteJWKSet(jwksUrl);
     this.jwksCache.set(iss, jwks);
     return jwks;
   }
@@ -87,7 +93,20 @@ export class SupabaseJwtGuard implements CanActivate {
 
     const authHeader = req.headers['authorization'];
     const cookieToken = (req as any).cookies?.['sb-access-token'];
-    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : cookieToken;
+    const token = authHeader?.startsWith('Bearer ')
+      ? authHeader.slice(7).trim()
+      : cookieToken;
+
+    // DEBUG: Log what we received
+    this.logger.debug(
+      `[AUTH] authHeader: ${authHeader ? authHeader.substring(0, 40) + '...' : 'NONE'}`,
+    );
+    this.logger.debug(
+      `[AUTH] cookieToken: ${cookieToken ? cookieToken.substring(0, 40) + '...' : 'NONE'}`,
+    );
+    this.logger.debug(
+      `[AUTH] final token: ${token ? token.substring(0, 40) + '...' : 'NONE'}`,
+    );
 
     if (!token) {
       throw new UnauthorizedException('Missing bearer token');
@@ -110,16 +129,26 @@ export class SupabaseJwtGuard implements CanActivate {
         clockTolerance: 5, // 5 seconds
       });
 
-      (req as any).user = { sub: payload.sub, email: (payload as any).email ?? null, ...payload };
+      (req as any).user = {
+        sub: payload.sub,
+        email: (payload as any).email ?? null,
+        ...payload,
+      };
       this.logger.log(`Verified via JWKS for user: ${payload.sub}`);
       return true;
     } catch (err: any) {
-  this.logger.warn(`JWT verify (JWKS) failed: ${err?.message || String(err)}`);
+      this.logger.warn(
+        `JWT verify (JWKS) failed: ${err?.message || String(err)}`,
+      );
 
       // 1b) Try alternate JWKS endpoint before giving up on RS256 verification
       try {
         const raw = ((): string | undefined => {
-          try { return decodeJwt(token).iss as string | undefined; } catch { return undefined; }
+          try {
+            return decodeJwt(token).iss;
+          } catch {
+            return undefined;
+          }
         })();
         if (raw) {
           const alt = this.getAlternateJwks(raw);
@@ -129,13 +158,21 @@ export class SupabaseJwtGuard implements CanActivate {
               audience: 'authenticated',
               clockTolerance: 5,
             });
-            (req as any).user = { sub: payload.sub, email: (payload as any).email ?? null, ...payload };
-            this.logger.log(`Verified via alternate JWKS for user: ${payload.sub}`);
+            (req as any).user = {
+              sub: payload.sub,
+              email: (payload as any).email ?? null,
+              ...payload,
+            };
+            this.logger.log(
+              `Verified via alternate JWKS for user: ${payload.sub}`,
+            );
             return true;
           }
         }
       } catch (errAlt: any) {
-        this.logger.warn(`JWT verify (alternate JWKS) failed: ${errAlt?.message || String(errAlt)}`);
+        this.logger.warn(
+          `JWT verify (alternate JWKS) failed: ${errAlt?.message || String(errAlt)}`,
+        );
       }
 
       // 2) Optional HS256 fallback (for self-hosted Supabase or legacy tokens) only if explicit secret provided
@@ -147,26 +184,49 @@ export class SupabaseJwtGuard implements CanActivate {
             // In HS256 fallback, skip strict audience checks to support anon/service keys in dev
             clockTolerance: 5,
           });
-          (req as any).user = { sub: payload.sub, email: (payload as any).email ?? null, ...payload };
-          this.logger.log(`Verified via HS256 fallback for user: ${payload.sub}`);
+          (req as any).user = {
+            sub: payload.sub,
+            email: (payload as any).email ?? null,
+            ...payload,
+          };
+          this.logger.log(
+            `Verified via HS256 fallback for user: ${payload.sub}`,
+          );
           return true;
         } catch (err2: any) {
-          this.logger.error(`JWT verify (HS256 fallback) failed: ${err2?.message || String(err2)}`);
+          this.logger.error(
+            `JWT verify (HS256 fallback) failed: ${err2?.message || String(err2)}`,
+          );
         }
       }
 
       // 3) Dev-only: allow unverified tokens if explicitly enabled (do NOT use in prod)
-      if (process.env.NODE_ENV !== 'production' && process.env.AUTH_DEV_ALLOW_UNVERIFIED === 'true') {
+      if (
+        process.env.NODE_ENV !== 'production' &&
+        process.env.AUTH_DEV_ALLOW_UNVERIFIED === 'true'
+      ) {
         try {
           const decoded = decodeJwt(token);
           // Use a valid UUID for dev to satisfy Prisma's UUID column filtering
-          const sub = (decoded.sub as string) || (decoded as any).user_id || '00000000-0000-0000-0000-000000000001';
-          (req as any).user = { sub, email: (decoded as any).email ?? null, ...decoded };
-          this.logger.warn('DEV MODE: Accepted token without signature verification. Disable AUTH_DEV_ALLOW_UNVERIFIED in production.');
+          const sub =
+            (decoded.sub as string) ||
+            (decoded as any).user_id ||
+            '00000000-0000-0000-0000-000000000001';
+          (req as any).user = {
+            sub,
+            email: (decoded as any).email ?? null,
+            ...decoded,
+          };
+          this.logger.warn(
+            'DEV MODE: Accepted token without signature verification. Disable AUTH_DEV_ALLOW_UNVERIFIED in production.',
+          );
           return true;
         } catch (e) {
           // Not a JWT? Still allow with a dummy user in dev
-          (req as any).user = { sub: '00000000-0000-0000-0000-000000000001', email: null };
+          (req as any).user = {
+            sub: '00000000-0000-0000-0000-000000000001',
+            email: null,
+          };
           this.logger.warn('DEV MODE: No JWT decode; injected dummy user.');
           return true;
         }
@@ -178,10 +238,10 @@ export class SupabaseJwtGuard implements CanActivate {
 }
 
 export interface SupabaseUserPayload extends JWTPayload {
-  sub: string
-  email?: string
-  role?: string
-  [key: string]: any
+  sub: string;
+  email?: string;
+  role?: string;
+  [key: string]: any;
 }
 
 export type AuthenticatedRequest = { user: SupabaseUserPayload } & Request;

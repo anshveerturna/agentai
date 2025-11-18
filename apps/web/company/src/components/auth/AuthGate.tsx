@@ -22,6 +22,13 @@ export function AuthGate({ children, redirectTo = '/login', loadingFallback = nu
     let cancelled = false
     const run = async () => {
       try {
+        // If Supabase env is missing in dev, treat user as anonymous and redirect.
+        if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+          setStatus('anon')
+          const next = encodeURIComponent(pathname || '/')
+          router.replace(`${redirectTo}?next=${next}`)
+          return
+        }
         const supabase = getSupabaseClient()
         const { data: { session } } = await supabase.auth.getSession()
         if (cancelled) return
@@ -33,10 +40,11 @@ export function AuthGate({ children, redirectTo = '/login', loadingFallback = nu
           setStatus('authed')
         }
       } catch {
-        if (!cancelled) {
-          setErrMsg('Authentication check failed.')
-          setStatus('error')
-        }
+        // Graceful fallback: treat as anonymous instead of hard error screen
+        if (cancelled) return
+        setStatus('anon')
+        const next = encodeURIComponent(pathname || '/')
+        router.replace(`${redirectTo}?next=${next}`)
       }
     }
     run()
